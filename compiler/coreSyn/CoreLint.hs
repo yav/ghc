@@ -1031,7 +1031,7 @@ lintAndScopeId id linterF
                 -- See Note [Checking for global Ids]
        ; (ty, k) <- lintInTy (idType id)
        ; lintL (not (isLevityPolymorphic k))
-           (text "RuntimeRep-polymorphic binder:" <+>
+           (text "Levity-polymorphic binder:" <+>
                  (ppr id <+> dcolon <+> parens (ppr ty <+> dcolon <+> ppr k)))
        ; let id' = setIdType id ty
        ; addInScopeVar id' $ (linterF id') }
@@ -1400,12 +1400,13 @@ lintCoercion co@(UnivCo prov r ty1 ty2)
      isUnBoxed PtrRep = False
      isUnBoxed _      = True
      checkTypes t1 t2
-       = case (repType t1, repType t2) of
-           (UnaryRep _, UnaryRep _) ->
-              validateCoercion (typePrimRep t1) (typePrimRep t2)
-           (MultiRep rep1, MultiRep rep2) ->
-              checkWarnL (rep1 == rep2) (report "multi values with different reps")
-           _  -> addWarnL (report "multi rep and unary rep")
+       = do { checkWarnL (reps1 `equalLength` reps2)
+                         (report "values with different # of reps")
+            ; zipWithM validateCoercion reps1 reps2 }
+       where
+         reps1 = typePrimRep t1
+         reps2 = typePrimRep t2
+
      validateCoercion :: PrimRep -> PrimRep -> LintM ()
      validateCoercion rep1 rep2
        = do { dflags <- getDynFlags

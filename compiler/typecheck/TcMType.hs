@@ -1003,7 +1003,7 @@ zonkQuantifiedTyVar default_kind tv
     zonk_meta_tv :: TcTyVar -> TcM (Maybe TcTyVar)
     zonk_meta_tv tv
       | isRuntimeRepVar tv   -- Never quantify over a RuntimeRep var
-      = do { writeMetaTyVar tv ptrRepLiftedTy
+      = do { writeMetaTyVar tv liftedRepTy
            ; return Nothing }
 
       | default_kind         -- -XNoPolyKinds and this is a kind var

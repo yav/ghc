@@ -2279,7 +2279,7 @@ marshalableTyCon :: DynFlags -> TyCon -> Validity
 marshalableTyCon dflags tc
   | isUnliftedTyCon tc
   , not (isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc)
-  , tyConPrimRep tc /= VoidRep -- Note [Marshalling VoidRep]
+  , not (null (tyConPrimRep tc)) -- Note [Marshalling void]
   = validIfUnliftedFFITypes dflags
   | otherwise
   = boxedMarshalableTyCon tc
@@ -2317,7 +2317,7 @@ legalFIPrimResultTyCon :: DynFlags -> TyCon -> Validity
 legalFIPrimResultTyCon dflags tc
   | isUnliftedTyCon tc
   , isUnboxedTupleTyCon tc || isUnboxedSumTyCon tc
-     || tyConPrimRep tc /= VoidRep   -- Note [Marshalling VoidRep]
+     || not (null (tyConPrimRep tc))   -- Note [Marshalling void]
   = validIfUnliftedFFITypes dflags
 
   | otherwise
@@ -2332,8 +2332,8 @@ validIfUnliftedFFITypes dflags
   | otherwise = NotValid (text "To marshal unlifted types, use UnliftedFFITypes")
 
 {-
-Note [Marshalling VoidRep]
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Note [Marshalling void]
+~~~~~~~~~~~~~~~~~~~~~~~
 We don't treat State# (whose PrimRep is VoidRep) as marshalable.
 In turn that means you can't write
         foreign import foo :: Int -> State# RealWorld
