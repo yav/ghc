@@ -54,6 +54,7 @@ module TysPrim(
         mutableArrayArrayPrimTyCon, mkMutableArrayArrayPrimTy,
         smallMutableArrayPrimTyCon, mkSmallMutableArrayPrimTy,
         mutVarPrimTyCon, mkMutVarPrimTy,
+        refPrimTyCon, mkRefPrimTy,
 
         mVarPrimTyCon,                  mkMVarPrimTy,
         tVarPrimTyCon,                  mkTVarPrimTy,
@@ -137,6 +138,7 @@ primTyCons
     , mVarPrimTyCon
     , tVarPrimTyCon
     , mutVarPrimTyCon
+    , refPrimTyCon
     , realWorldTyCon
     , stablePtrPrimTyCon
     , stableNamePrimTyCon
@@ -172,7 +174,7 @@ mkBuiltInPrimTc fs unique tycon
                   BuiltInSyntax
 
 
-charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, compactPrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName :: Name
+charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, proxyPrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, smallArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, smallMutableArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, compactPrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName, eqReprPrimTyConName, eqPhantPrimTyConName, voidPrimTyConName, refPrimTyConName :: Name
 charPrimTyConName             = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
 intPrimTyConName              = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
 int32PrimTyConName            = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
@@ -207,6 +209,7 @@ compactPrimTyConName          = mkPrimTc (fsLit "Compact#") compactPrimTyConKey 
 bcoPrimTyConName              = mkPrimTc (fsLit "BCO#") bcoPrimTyConKey bcoPrimTyCon
 weakPrimTyConName             = mkPrimTc (fsLit "Weak#") weakPrimTyConKey weakPrimTyCon
 threadIdPrimTyConName         = mkPrimTc (fsLit "ThreadId#") threadIdPrimTyConKey threadIdPrimTyCon
+refPrimTyConName              = mkPrimTc (fsLit "Ref#") refPrimTyConKey refPrimTyCon
 
 {-
 ************************************************************************
@@ -872,6 +875,27 @@ mutVarPrimTyCon = pcPrimTyCon mutVarPrimTyConName [Nominal, Representational] Un
 
 mkMutVarPrimTy :: Type -> Type -> Type
 mkMutVarPrimTy s elt        = TyConApp mutVarPrimTyCon [s, elt]
+
+{- *********************************************************************
+*                                                                      *
+                References for mutable constructor fields
+*                                                                      *
+********************************************************************* -}
+
+-- Ref# :: forall (k :: RuntimeRep). * -> TYPE k -> TYPE UnliftedRep
+refPrimTyCon :: TyCon
+refPrimTyCon = mkPrimTyCon refPrimTyConName binders res_kind [Nominal,Representational]
+  where
+  binders  = mkTemplateTyConBinders [runtimeRepTy] (\[k] -> [liftedTypeKind, tYPE k])
+  res_kind = tYPE (primRepToRuntimeRep UnliftedRep)
+
+mkRefPrimTy :: Type -> Type -> Type -> Type
+mkRefPrimTy k s elt = TyConApp refPrimTyCon [k, s, elt]
+
+
+
+
+
 
 {-
 ************************************************************************
