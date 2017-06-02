@@ -304,7 +304,7 @@ fitsIn ty1 ty2
 typePrimRep :: HasDebugCallStack => Type -> [PrimRep]
 typePrimRep ty
   | Just (tc,_) <- splitTyConApp_maybe ty
-  , tc == refPrimTyCon = [ LiftedRep, WordRep ]
+  , tc == refPrimTyCon = [ UnliftedRep, WordRep ]
 
 typePrimRep ty = kindPrimRep (text "typePrimRep" <+>
                               parens (ppr ty <+> dcolon <+> ppr (typeKind ty)))
