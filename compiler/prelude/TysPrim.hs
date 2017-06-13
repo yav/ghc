@@ -883,26 +883,14 @@ mkMutVarPrimTy s elt        = TyConApp mutVarPrimTyCon [s, elt]
 ********************************************************************* -}
 
 
-{-
-Note [The kind of Ref#]
 
 
-Ref# :: forall (k :: RuntimeRep). * -> TYPE k -> TYPE UnliftedRep
-
-The result kind does not capture the representation exactly.
-The actual representation is an unboxed tuple of an UnliftedRep and
-a WordRep (see `typePrimRep` in simplStg/RepType.hs).
-Using `TYPE UnliftedRep` is a good enough approximation though,
-as refs are manipulated only through the read/write primitives,
-and are not split into their components otherwise.
--}
-
-
+-- Ref# :: forall (k :: RuntimeRep). * -> TYPE k -> (# UnliftedRep, WordRep #)
 refPrimTyCon :: TyCon
 refPrimTyCon = mkPrimTyCon refPrimTyConName binders res_kind [Nominal,Representational]
   where
   binders  = mkTemplateTyConBinders [runtimeRepTy] (\[k] -> [liftedTypeKind, tYPE k])
-  res_kind = tYPE (primRepToRuntimeRep UnliftedRep)
+  res_kind = unboxedTupleKind [unliftedRepDataConTy, wordRepDataConTy ]
 
 mkRefPrimTy :: Type -> Type -> Type -> Type
 mkRefPrimTy k s elt = TyConApp refPrimTyCon [k, s, elt]

@@ -302,10 +302,6 @@ fitsIn ty1 ty2
 -- a list of 'PrimRep': it's a list because of the possibility of
 -- no runtime representation (void) or multiple (unboxed tuple/sum)
 typePrimRep :: HasDebugCallStack => Type -> [PrimRep]
-typePrimRep ty
-  | Just (tc,_) <- splitTyConApp_maybe ty
-  , tc == refPrimTyCon = [ UnliftedRep, WordRep ]
-
 typePrimRep ty = kindPrimRep (text "typePrimRep" <+>
                               parens (ppr ty <+> dcolon <+> ppr (typeKind ty)))
                              (typeKind ty)
