@@ -309,6 +309,86 @@ emitPrimOp _ [res] GetCurrentCCSOp [_dummy_arg]
 emitPrimOp dflags [res] ReadMutVarOp [mutv]
    = emitAssign (CmmLocal res) (cmmLoadIndexW dflags mutv (fixedHdrSizeW dflags) (gcWord dflags))
 
+emitPrimOp dflags [res] ReadRefOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        (gcWord dflags) -- we read a pointer (i.e., a gcWord)
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefIntOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        (bWord dflags)  -- we read a native word
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefWordOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        (bWord dflags) -- we read a native word
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefInt64Op [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        b64   -- exactly 64 bits
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefWord64Op [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        b64   -- exactly 64 bits
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefAddrOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        (bWord dflags) -- a native word
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefFloatOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        f32       -- single precision floating point
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+emitPrimOp dflags [res] ReadRefDoubleOp [base,offset]
+   = emitAssign (CmmLocal res)
+     (cmmLoadIndexOffExpr dflags
+        (fixedHdrSize dflags)
+        f64     -- double precision float point
+        base
+        (gcWord dflags) -- offset is in words
+        offset)
+
+
+
+
+
+
+
+
+
 emitPrimOp dflags res@[] WriteMutVarOp [mutv,var]
    = do -- Without this write barrier, other CPUs may see this pointer before
         -- the writes for the closure it points to have occurred.

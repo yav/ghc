@@ -3234,6 +3234,77 @@ primop PrefetchValueOp0 "prefetchValue0#" GenPrimOp
    with strictness  = { \ _arity -> mkClosedStrictSig [botDmd, topDmd] topRes }
         has_side_effects =  True
 
+
+
+------------------------------------------------------------------------
+section "References to Mutable Fields"
+------------------------------------------------------------------------
+primtype Ref# k s a
+
+primop ReadRefOp "readRef#" GenPrimOp
+  Ref# LiftedRep s a -> State# s -> (# State# s, a #)
+ {Read the contents of a lifted mutable field.}
+   with
+   has_side_effects = True
+
+primop ReadRefIntOp "readRefIntRep#" GenPrimOp
+  Ref# IntRep s Int# -> State# s -> (# State# s, Int# #)
+ {Read the contents of a mutable field represented as an Int#.}
+   with
+   has_side_effects = True
+
+primop ReadRefWordOp "readRefWordRep#" GenPrimOp
+  Ref# WordRep s Word# -> State# s -> (# State# s, Word# #)
+ {Read the contents of a mutable field represented as a Word#.}
+   with
+   has_side_effects = True
+
+primop ReadRefInt64Op "readRefInt64Rep#" GenPrimOp
+  Ref# Int64Rep s Int64# -> State# s -> (# State# s, Int64# #)
+ {Read the contents of a mutable field represented as Int64#.}
+   with
+   has_side_effects = True
+
+primop ReadRefWord64Op "readRefWord64Rep#" GenPrimOp
+  Ref# Word64Rep s Word64# -> State# s -> (# State# s, Word64# #)
+ {Read the contents of a mutable field represented as Word64#.}
+   with
+   has_side_effects = True
+
+primop ReadRefAddrOp "readRefAddrRep#" GenPrimOp
+  Ref# AddrRep s Addr# -> State# s -> (# State# s, Addr# #)
+ {Read the contents of a mutable field represented as Addr#.}
+   with
+   has_side_effects = True
+
+primop ReadRefFloatOp "readRefFloatRep#" GenPrimOp
+  Ref# FloatRep s Float# -> State# s -> (# State# s, Float# #)
+ {Read the contents of a mutable field represented as Float#.}
+   with
+   has_side_effects = True
+
+primop ReadRefDoubleOp "readRefDoubleRep#" GenPrimOp
+  Ref# DoubleRep s Double# -> State# s -> (# State# s, Double# #)
+  {Read the contents of a mutable field represented as Double#.}
+  with
+  has_side_effects = True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ------------------------------------------------------------------------
 ---                                                                  ---
 ------------------------------------------------------------------------

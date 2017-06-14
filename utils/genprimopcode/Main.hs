@@ -380,6 +380,8 @@ pprTy = pty
           pty (TyF t1 t2) = pbty t1 ++ " -> " ++ pty t2
           pty (TyC t1 t2) = pbty t1 ++ " => " ++ pty t2
           pty t      = pbty t
+          pbty (TyApp (TyCon "Ref#") [TyApp k [],s,a]) =
+             "Ref# " ++ paty s ++ " (" ++ pbty a ++ ":: GHC.Prim.TYPE '" ++ show k ++ ")"
           pbty (TyApp tc ts) = show tc ++ concat (map (' ' :) (map paty ts))
           pbty (TyUTup ts)   = "(# "
                             ++ concat (intersperse "," (map pty ts))
@@ -565,12 +567,13 @@ gen_latex_doc (Info defaults entries)
 
 gen_wrappers :: Info -> String
 gen_wrappers (Info _ entries)
-   = "{-# LANGUAGE MagicHash, NoImplicitPrelude, UnboxedTuples #-}\n"
+   = "{-# LANGUAGE MagicHash, NoImplicitPrelude, UnboxedTuples, DataKinds, KindSignatures #-}\n"
         -- Dependencies on Prelude must be explicit in libraries/base, but we
         -- don't need the Prelude here so we add NoImplicitPrelude.
      ++ "module GHC.PrimopWrappers where\n"
      ++ "import qualified GHC.Prim\n"
      ++ "import GHC.Tuple ()\n"
+     ++ "import GHC.Types(RuntimeRep(..))\n"
      ++ "import GHC.Prim (" ++ types ++ ")\n"
      ++ unlines (concatMap f specs)
      where
@@ -578,7 +581,17 @@ gen_wrappers (Info _ entries)
                 filter (not.is_llvm_only) $
                 filter is_primop entries
         tycons = foldr union [] $ map (tyconsIn . ty) specs
-        tycons' = filter (`notElem` [TyCon "()", TyCon "Bool"]) tycons
+        tycons' = filter (`notElem` [TyCon "()", TyCon "Bool"
+                                    , TyCon "LiftedRep"
+                                    , TyCon "UnliftedRep"
+                                    , TyCon "IntRep"
+                                    , TyCon "WordRep"
+                                    , TyCon "Int64Rep"
+                                    , TyCon "Word64Rep"
+                                    , TyCon "AddrRep"
+                                    , TyCon "FloatRep"
+                                    , TyCon "DoubleRep"
+                                    ]) tycons
         types = concat $ intersperse ", " $ map show tycons'
         f spec = let args = map (\n -> "a" ++ show n) [1 .. arity (ty spec)]
                      src_name = wrap (name spec)
@@ -844,6 +857,19 @@ ppType (TyUTup ts) = "(mkTupleTy Unboxed "
 
 ppType (TyF s d) = "(mkFunTy (" ++ ppType s ++ ") (" ++ ppType d ++ "))"
 ppType (TyC s d) = "(mkFunTy (" ++ ppType s ++ ") (" ++ ppType d ++ "))"
+
+ppType (TyApp (TyCon "LiftedRep") [])   = "liftedRepDataConTy"
+ppType (TyApp (TyCon "UnliftedRep") []) = "unliftedRepDataConTy"
+ppType (TyApp (TyCon "IntRep") [])      = "intRepDataConTy"
+ppType (TyApp (TyCon "WordRep") [])     = "wordRepDataConTy"
+ppType (TyApp (TyCon "Int64Rep") [])    = "int64RepDataConTy"
+ppType (TyApp (TyCon "Word64Rep") [])   = "word64RepDataConTy"
+ppType (TyApp (TyCon "AddrRep") [])     = "addrRepDataConTy"
+ppType (TyApp (TyCon "FloatRep") [])    = "floatRepDataConTy"
+ppType (TyApp (TyCon "DoubleRep") [])   = "doubleRepDataConTy"
+
+ppType (TyApp (TyCon "Ref#") (xs@[_,_,_])) =
+  unwords ("mkRefPrimTy" : map ppType xs)
 
 ppType other
    = error ("ppType: can't handle: " ++ show other ++ "\n")
