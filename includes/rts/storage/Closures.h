@@ -474,3 +474,29 @@ typedef struct StgCompactNFData_ {
       // Used temporarily to store the result of compaction.  Doesn't need to be
       // a GC root.
 } StgCompactNFData;
+
+
+/* -----------------------------------------------------------------------------
+  Constructors with mutable fields
+----------------------------------------------------------------------------- */
+
+typedef struct StgMutConstr_ {
+  StgHeader header;
+  StgWord   card_table;
+  /* Bitmap of dirty pointers.
+     Bit-0 (least significant) is the first mutable pointer.
+
+     Note that we just use a word for this, so
+     this object type does not support more than
+     size_of(StgWord) mutable pointers. */
+
+  StgClosure *payload[];
+  /* The payload:
+       Mutable pointers
+       Non-mutable pointers
+       Non-pointers */
+} StgMutConstr;
+
+
+
+

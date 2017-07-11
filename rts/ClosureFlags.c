@@ -85,8 +85,10 @@ StgWord16 closure_flags[] = {
  [SMALL_MUT_ARR_PTRS_FROZEN0] =  (_HNF|     _NS|     _MUT|_UPT           ),
  [SMALL_MUT_ARR_PTRS_FROZEN]  =  (_HNF|     _NS|          _UPT           ),
  [COMPACT_NFDATA]       =  (_HNF|     _NS                              ),
+ [MUT_CONSTR]           =  (_HNF|     _NS|  _MUT                  ),
+  // XXX: Not sure what the _UPT flag is for, it does not seem to be used anywhere?
 };
 
-#if N_CLOSURE_TYPES != 64
+#if N_CLOSURE_TYPES != 65
 #error Closure types changed: update ClosureFlags.c!
 #endif

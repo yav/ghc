@@ -635,6 +635,26 @@ scavenge_block (bdescr *bd)
         break;
     }
 
+    case MUT_CONSTR: {
+        StgMutConstr *m = (StgMutConstr *) p;
+        StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
+
+        gct->eager_promotion = false;
+
+        for (p = (P_)m->payload; p < end; p++) {
+            evacuate((StgClosure **)p);
+        }
+
+        gct->eager_promotion = saved_eager_promotion;
+
+        if (!gct->failed_to_evac) {
+          m->card_table = 0;    // Make it clean
+        }
+
+        p += info->layout.payload.nptrs;
+        break;
+    }
+
     case BCO: {
         StgBCO *bco = (StgBCO *)p;
         evacuate((StgClosure **)&bco->instrs);
@@ -1133,6 +1153,25 @@ scavenge_mark_stack(void)
             break;
         }
 
+        case MUT_CONSTR: {
+          StgMutConstr *m = (StgMutConstr*) p;
+          StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
+
+          gct->eager_promotion = false;
+
+          for (p = (P_)m->payload; p < end; p++) {
+              evacuate((StgClosure **)p);
+          }
+
+          gct->eager_promotion = saved_eager_promotion;
+
+          if (!gct->failed_to_evac) {
+              m->card_table = 0; // Make it clean
+          }
+
+          break;
+        }
+
         case MUT_ARR_PTRS_FROZEN:
         case MUT_ARR_PTRS_FROZEN0:
             // follow everything
@@ -1521,6 +1560,27 @@ scavenge_one(StgPtr p)
             ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_FROZEN_info;
         }
         break;
+    }
+
+    case MUT_CONSTR: {
+      StgMutConstr *m = (StgMutConstr *) p;
+      StgWord todo = m->card_table;
+      StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
+
+      gct->eager_promotion = false;
+
+      for (p = (P_)m->payload; todo != 0 && p < end; ++p) {
+          if (todo & 1) evacuate((StgClosure **)p);
+          todo = todo >> 1;
+      }
+
+      gct->eager_promotion = saved_eager_promotion;
+
+      if (!gct->failed_to_evac) {
+        m->card_table = 0;  // make it clean
+      }
+
+      break;
     }
 
     case TSO:
