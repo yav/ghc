@@ -3299,6 +3299,49 @@ primop ReadRefDoubleOp "readRefDoubleRep#" GenPrimOp
 
 
 
+primop WriteRefIntOp "writeRefIntRep#" GenPrimOp
+  Ref# IntRep s Int# -> Int# -> State# s -> State# s
+ {Set the value of an Int# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefWordOp "writeRefWordRep#" GenPrimOp
+  Ref# WordRep s Word# -> Word# -> State# s -> State# s
+ {Set the value of an Word# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefInt64Op "writeRefInt64Rep#" GenPrimOp
+  Ref# Int64Rep s Int64# -> Int64# -> State# s -> State# s
+ {Set the value of an Int64# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefWord64Op "writeRefWord64Rep#" GenPrimOp
+  Ref# Word64Rep s Word64# -> Word64# -> State# s -> State# s
+ {Set the value of an Word64# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefAddrOp "writeRefAddrRep#" GenPrimOp
+  Ref# AddrRep s Addr# -> Addr# -> State# s -> State# s
+ {Set the value of an Addr# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefFloatOp "writeRefFloatRep#" GenPrimOp
+  Ref# FloatRep s Float# -> Float# -> State# s -> State# s
+ {Set the value of an Float# mutable field.}
+   with
+   has_side_effects = True
+
+primop WriteRefDoubleOp "writeRefDoubleRep#" GenPrimOp
+  Ref# DoubleRep s Double# -> Double# -> State# s -> State# s
+ {Set the value of an Double# mutable field.}
+   with
+   has_side_effects = True
+
+
 
 
 
