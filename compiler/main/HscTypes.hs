@@ -12,7 +12,8 @@ module HscTypes (
         HscEnv(..), hscEPS,
         FinderCache, FindResult(..), InstalledFindResult(..),
         Target(..), TargetId(..), pprTarget, pprTargetId,
-        ModuleGraph, emptyMG,
+        needsTemplateHaskellOrQQ,
+        ModuleGraph, emptyMG, mapMG,
         HscStatus(..),
         IServ(..),
 
@@ -40,7 +41,6 @@ module HscTypes (
         addToHpt, addListToHpt, lookupHptDirectly, listToHpt,
         hptCompleteSigs,
         hptInstances, hptRules, hptVectInfo, pprHPT,
-        hptObjs,
 
         -- * State relating to known packages
         ExternalPackageState(..), EpsStats(..), addEpsInStats,
@@ -178,7 +178,8 @@ import PrelNames        ( gHC_PRIM, ioTyConName, printName, mkInteractiveModule
                         , eqTyConName )
 import TysWiredIn
 import Packages hiding  ( Version(..) )
-import DynFlags
+import CmdLineParser
+import DynFlags hiding  ( WarnReason(..) )
 import DriverPhases     ( Phase, HscSource(..), isHsBootOrSig, hscSourceString )
 import BasicTypes
 import IfaceSyn
@@ -199,9 +200,10 @@ import Platform
 import Util
 import UniqDSet
 import GHC.Serialized   ( Serialized )
+import qualified GHC.LanguageExtensions as LangExt
 
 import Foreign
-import Control.Monad    ( guard, liftM, when, ap )
+import Control.Monad    ( guard, liftM, ap )
 import Data.Foldable    ( foldl' )
 import Data.IORef
 import Data.Time
@@ -326,15 +328,25 @@ printOrThrowWarnings dflags warns
   | otherwise
   = printBagOfErrors dflags warns
 
-handleFlagWarnings :: DynFlags -> [Located String] -> IO ()
-handleFlagWarnings dflags warns
- = when (wopt Opt_WarnDeprecatedFlags dflags) $ do
-        -- It would be nicer if warns :: [Located MsgDoc], but that
-        -- has circular import problems.
-      let bag = listToBag [ mkPlainWarnMsg dflags loc (text warn)
-                          | L loc warn <- warns ]
+handleFlagWarnings :: DynFlags -> [Warn] -> IO ()
+handleFlagWarnings dflags warns = do
+  let warns' = filter (shouldPrintWarning dflags . warnReason)  warns
 
-      printOrThrowWarnings dflags bag
+      -- It would be nicer if warns :: [Located MsgDoc], but that
+      -- has circular import problems.
+      bag = listToBag [ mkPlainWarnMsg dflags loc (text warn)
+                      | Warn _ (L loc warn) <- warns' ]
+
+  printOrThrowWarnings dflags bag
+
+-- Given a warn reason, check to see if it's associated -W opt is enabled
+shouldPrintWarning :: DynFlags -> WarnReason -> Bool
+shouldPrintWarning dflags ReasonDeprecatedFlag
+  = wopt Opt_WarnDeprecatedFlags dflags
+shouldPrintWarning dflags ReasonUnrecognisedFlag
+  = wopt Opt_WarnUnrecognisedWarningFlags dflags
+shouldPrintWarning _ _
+  = True
 
 {-
 ************************************************************************
@@ -688,8 +700,6 @@ hptSomeThingsBelowUs extract include_hi_boot hsc_env deps
         -- And get its dfuns
     , thing <- things ]
 
-hptObjs :: HomePackageTable -> [FilePath]
-hptObjs hpt = concat (map (maybe [] linkableObjs . hm_linkable) (eltsHpt hpt))
 
 {-
 ************************************************************************
@@ -701,35 +711,35 @@ hptObjs hpt = concat (map (maybe [] linkableObjs . hm_linkable) (eltsHpt hpt))
 
 -- | The supported metaprogramming result types
 data MetaRequest
-  = MetaE  (LHsExpr RdrName   -> MetaResult)
-  | MetaP  (LPat RdrName      -> MetaResult)
-  | MetaT  (LHsType RdrName   -> MetaResult)
-  | MetaD  ([LHsDecl RdrName] -> MetaResult)
-  | MetaAW (Serialized        -> MetaResult)
+  = MetaE  (LHsExpr GhcPs   -> MetaResult)
+  | MetaP  (LPat GhcPs      -> MetaResult)
+  | MetaT  (LHsType GhcPs   -> MetaResult)
+  | MetaD  ([LHsDecl GhcPs] -> MetaResult)
+  | MetaAW (Serialized     -> MetaResult)
 
 -- | data constructors not exported to ensure correct result type
 data MetaResult
-  = MetaResE  { unMetaResE  :: LHsExpr RdrName   }
-  | MetaResP  { unMetaResP  :: LPat RdrName      }
-  | MetaResT  { unMetaResT  :: LHsType RdrName   }
-  | MetaResD  { unMetaResD  :: [LHsDecl RdrName] }
+  = MetaResE  { unMetaResE  :: LHsExpr GhcPs   }
+  | MetaResP  { unMetaResP  :: LPat GhcPs      }
+  | MetaResT  { unMetaResT  :: LHsType GhcPs   }
+  | MetaResD  { unMetaResD  :: [LHsDecl GhcPs] }
   | MetaResAW { unMetaResAW :: Serialized        }
 
-type MetaHook f = MetaRequest -> LHsExpr Id -> f MetaResult
+type MetaHook f = MetaRequest -> LHsExpr GhcTc -> f MetaResult
 
-metaRequestE :: Functor f => MetaHook f -> LHsExpr Id -> f (LHsExpr RdrName)
+metaRequestE :: Functor f => MetaHook f -> LHsExpr GhcTc -> f (LHsExpr GhcPs)
 metaRequestE h = fmap unMetaResE . h (MetaE MetaResE)
 
-metaRequestP :: Functor f => MetaHook f -> LHsExpr Id -> f (LPat RdrName)
+metaRequestP :: Functor f => MetaHook f -> LHsExpr GhcTc -> f (LPat GhcPs)
 metaRequestP h = fmap unMetaResP . h (MetaP MetaResP)
 
-metaRequestT :: Functor f => MetaHook f -> LHsExpr Id -> f (LHsType RdrName)
+metaRequestT :: Functor f => MetaHook f -> LHsExpr GhcTc -> f (LHsType GhcPs)
 metaRequestT h = fmap unMetaResT . h (MetaT MetaResT)
 
-metaRequestD :: Functor f => MetaHook f -> LHsExpr Id -> f [LHsDecl RdrName]
+metaRequestD :: Functor f => MetaHook f -> LHsExpr GhcTc -> f [LHsDecl GhcPs]
 metaRequestD h = fmap unMetaResD . h (MetaD MetaResD)
 
-metaRequestAW :: Functor f => MetaHook f -> LHsExpr Id -> f Serialized
+metaRequestAW :: Functor f => MetaHook f -> LHsExpr GhcTc -> f Serialized
 metaRequestAW h = fmap unMetaResAW . h (MetaAW MetaResAW)
 
 {-
@@ -1545,7 +1555,7 @@ data InteractiveContext
     }
 
 data InteractiveImport
-  = IIDecl (ImportDecl RdrName)
+  = IIDecl (ImportDecl GhcPs)
       -- ^ Bring the exports of a particular module
       -- (filtered by an import decl) into scope
 
@@ -2600,8 +2610,27 @@ soExt platform
 -- 'GHC.topSortModuleGraph' and 'Digraph.flattenSCC' to achieve this.
 type ModuleGraph = [ModSummary]
 
+
+-- | Determines whether a set of modules requires Template Haskell or
+-- Quasi Quotes
+--
+-- Note that if the session's 'DynFlags' enabled Template Haskell when
+-- 'depanal' was called, then each module in the returned module graph will
+-- have Template Haskell enabled whether it is actually needed or not.
+needsTemplateHaskellOrQQ :: ModuleGraph -> Bool
+needsTemplateHaskellOrQQ mg = any isTemplateHaskellOrQQNonBoot mg
+
 emptyMG :: ModuleGraph
 emptyMG = []
+
+mapMG :: (ModSummary -> ModSummary) -> ModuleGraph -> ModuleGraph
+mapMG = map
+
+isTemplateHaskellOrQQNonBoot :: ModSummary -> Bool
+isTemplateHaskellOrQQNonBoot ms =
+  (xopt LangExt.TemplateHaskell (ms_hspp_opts ms)
+    || xopt LangExt.QuasiQuotes (ms_hspp_opts ms)) &&
+  not (isBootSummary ms)
 
 -- | A single node in a 'ModuleGraph'. The nodes of the module graph
 -- are one of:
@@ -2936,7 +2965,7 @@ instance Binary IfaceTrustInfo where
 -}
 
 data HsParsedModule = HsParsedModule {
-    hpm_module    :: Located (HsModule RdrName),
+    hpm_module    :: Located (HsModule GhcPs),
     hpm_src_files :: [FilePath],
        -- ^ extra source files (e.g. from #includes).  The lexer collects
        -- these from '# <file> <line>' pragmas, which the C preprocessor

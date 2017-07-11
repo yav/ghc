@@ -46,23 +46,25 @@ startSlave verbose port s = do
   putStr "DocRoot: "
   base_path <- peekCString s
   putStrLn base_path
-  startSlave' verbose base_path (toEnum port)
+  _ <- forkIO $ startSlave' verbose base_path (toEnum port)
+  return ()
 
+-- | @startSlave'@ provdes a blocking haskell interface, that
+-- the hosting application on the target can use to start the
+-- slave process.
 startSlave' :: Bool -> String -> PortNumber -> IO ()
 startSlave' verbose base_path port = do
 
   sock <- openSocket port
 
-  _ <- forkIO $ forever $ do
+  forever $ do
     when verbose $ putStrLn "Opening socket"
     pipe <- acceptSocket sock >>= socketToPipe
     putStrLn $ "Listening on port " ++ show port
-    when verbose $ putStrLn "Staring serv"
+    when verbose $ putStrLn "Starting serv"
     uninterruptibleMask $ serv verbose (hook verbose base_path pipe) pipe
     when verbose $ putStrLn "serv ended"
     return ()
-
-  return ()
 
 -- | The iserv library may need access to files, specifically
 -- archives and object files to be linked. If ghc and the slave

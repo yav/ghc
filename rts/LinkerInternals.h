@@ -32,13 +32,23 @@ typedef enum {
 /* Indication of section kinds for loaded objects.  Needed by
    the GC for deciding whether or not a pointer on the stack
    is a code pointer.
+   See Note [BFD import libraries].
 */
 typedef
-   enum { SECTIONKIND_CODE_OR_RODATA,
+   enum { /* Section is code or readonly. e.g. .text or .r(o)data.  */
+          SECTIONKIND_CODE_OR_RODATA,
+          /* Section contains read/write data. e.g. .data.  */
           SECTIONKIND_RWDATA,
+          /* Static initializer section. e.g. .ctors.  */
           SECTIONKIND_INIT_ARRAY,
+          /* We don't know what the section is and don't care.  */
           SECTIONKIND_OTHER,
-          SECTIONKIND_NOINFOAVAIL }
+          /* Section belongs to an import section group. e.g. .idata$.  */
+          SECTIONKIND_IMPORT,
+          /* Section defines an import library entry, e.g. idata$7.  */
+          SECTIONKIND_IMPORT_LIBRARY,
+          SECTIONKIND_NOINFOAVAIL
+        }
    SectionKind;
 
 typedef
@@ -101,16 +111,7 @@ typedef struct ForeignExportStablePtr_ {
     struct ForeignExportStablePtr_ *next;
 } ForeignExportStablePtr;
 
-#if defined(powerpc_HOST_ARCH) || defined(x86_64_HOST_ARCH) \
-    || defined(arm_HOST_ARCH)
-/* ios currently uses adjacent got tables, and no symbol extras */
-#if !defined(ios_HOST_OS)
-#define NEED_SYMBOL_EXTRAS 1
-#endif /* ios_HOST_OS */
-#endif
-
-/* iOS Simulator however, needs symbol extras for now (#13678) */
-#if defined(ios_HOST_OS) && defined(x86_64_HOST_ARCH)
+#if defined(powerpc_HOST_ARCH) || defined(x86_64_HOST_ARCH)
 #define NEED_SYMBOL_EXTRAS 1
 #endif
 

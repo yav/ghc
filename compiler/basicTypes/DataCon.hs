@@ -425,7 +425,7 @@ For the TyVarBinders in a DataCon and PatSyn:
 
 Why do we need the TyVarBinders, rather than just the TyVars?  So that
 we can construct the right type for the DataCon with its foralls
-attributed the correce visiblity.  That in turn governs whether you
+attributed the correct visibility.  That in turn governs whether you
 can use visible type application at a call of the data constructor.
 
 Note [DataCon arities]
@@ -1052,7 +1052,7 @@ dataConInstSig
   -> [Type]    -- Instantiate the *universal* tyvars with these types
   -> ([TyVar], ThetaType, [Type])  -- Return instantiated existentials
                                    -- theta and arg tys
--- ^ Instantantiate the universal tyvars of a data con,
+-- ^ Instantiate the universal tyvars of a data con,
 --   returning the instantiated existentials, constraints, and args
 dataConInstSig (MkData { dcUnivTyVars = univ_tvs, dcExTyVars = ex_tvs
                        , dcEqSpec = eq_spec, dcOtherTheta  = theta
@@ -1130,7 +1130,7 @@ dataConInstArgTys :: DataCon    -- ^ A datacon with no existentials or equality 
                   -> [Type]
 dataConInstArgTys dc@(MkData {dcUnivTyVars = univ_tvs,
                               dcExTyVars = ex_tvs}) inst_tys
- = ASSERT2( length univ_tvs == length inst_tys
+ = ASSERT2( univ_tvs `equalLength` inst_tys
           , text "dataConInstArgTys" <+> ppr dc $$ ppr univ_tvs $$ ppr inst_tys)
    ASSERT2( null ex_tvs, ppr dc )
    map (substTyWith (binderVars univ_tvs) inst_tys) (dataConRepArgTys dc)
@@ -1147,7 +1147,7 @@ dataConInstOrigArgTys
 dataConInstOrigArgTys dc@(MkData {dcOrigArgTys = arg_tys,
                                   dcUnivTyVars = univ_tvs,
                                   dcExTyVars = ex_tvs}) inst_tys
-  = ASSERT2( length tyvars == length inst_tys
+  = ASSERT2( tyvars `equalLength` inst_tys
           , text "dataConInstOrigArgTys" <+> ppr dc $$ ppr tyvars $$ ppr inst_tys )
     map (substTyWith tyvars inst_tys) arg_tys
   where

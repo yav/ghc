@@ -928,6 +928,7 @@ is as follows. If the do-expression has the following form: ::
     do p1 <- E1; ...; pn <- En; return E
 
 where none of the variables defined by ``p1...pn`` are mentioned in ``E1...En``,
+and ``p1...pn`` are all variables or lazy patterns,
 then the expression will only require ``Applicative``. Otherwise, the expression
 will require ``Monad``. The block may return a pure expression ``E`` depending
 upon the results ``p1...pn`` with either ``return`` or ``pure``.
@@ -967,12 +968,47 @@ the optimal solution, provided as an option:
     statements).  The default ``ApplicativeDo`` algorithm is ``O(n^2)``.
 
 
+.. _applicative-do-strict:
+
+Strict patterns
+~~~~~~~~~~~~~~~
+
+
+A strict pattern match in a bind statement prevents
+``ApplicativeDo`` from transforming that statement to use
+``Applicative``.  This is because the transformation would change the
+semantics by making the expression lazier.
+
+For example, this code will require a ``Monad`` constraint::
+
+    > :t \m -> do { (x:xs) <- m; return x }
+    \m -> do { (x:xs) <- m; return x } :: Monad m => m [b] -> m b
+
+but making the pattern match lazy allows it to have a ``Functor`` constraint::
+
+    > :t \m -> do { ~(x:xs) <- m; return x }
+    \m -> do { ~(x:xs) <- m; return x } :: Functor f => f [b] -> f b
+
+A "strict pattern match" is any pattern match that can fail.  For
+example, ``()``, ``(x:xs)``, ``!z``, and ``C x`` are strict patterns,
+but ``x`` and ``~(1,2)`` are not.  For the purposes of
+``ApplicativeDo``, a pattern match against a ``newtype`` constructor
+is considered strict.
+
+When there's a strict pattern match in a sequence of statements,
+``ApplicativeDo`` places a ``>>=`` between that statement and the one
+that follows it.  The sequence may be transformed to use ``<*>``
+elsewhere, but the strict pattern match and the following statement
+will always be connected with ``>>=``, to retain the same strictness
+semantics as the standard do-notation.  If you don't want this, simply
+put a ``~`` on the pattern match to make it lazy.
+
 .. _applicative-do-existential:
 
 Existential patterns and GADTs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Note that when the pattern in a statement matches a constructor with
+When the pattern in a statement matches a constructor with
 existential type variables and/or constraints, the transformation that
 ``ApplicativeDo`` performs may mean that the pattern does not scope
 over the statements that follow it.  This is because the rearrangement
@@ -985,7 +1021,8 @@ program does not typecheck::
 
     test = do
       A x <- undefined
-      _ <- return True
+      _ <- return 'a'
+      _ <- return 'b'
       return (x == x)
 
 The reason is that the ``Eq`` constraint that would be brought into
@@ -995,8 +1032,12 @@ rearranged the expression to look like this::
 
     test =
       (\x _ -> x == x)
-        <$> do A x <- undefined; return x
-        <*> return True
+        <$> do A x <- undefined; _ <- return 'a'; return x
+        <*> return 'b'
+
+(Note that the ``return 'a'`` and ``return 'b'`` statements are needed
+to make ``ApplicativeDo`` apply despite the restriction noted in
+:ref:`applicative-do-strict`, because ``A x`` is a strict pattern match.)
 
 Turning off ``ApplicativeDo`` lets the program typecheck.  This is
 something to bear in mind when using ``ApplicativeDo`` in combination
@@ -3590,8 +3631,7 @@ automatically derived:
    ``Functor``, defined in ``GHC.Base``. See :ref:`deriving-functor`.
 
 -  With :ghc-flag:`-XDeriveDataTypeable`, you can derive instances of the class
-   ``Data``, defined in ``Data.Data``. See :ref:`deriving-typeable` for
-   deriving ``Typeable``.
+   ``Data``, defined in ``Data.Data``. See :ref:`deriving-data`.
 
 -  With :ghc-flag:`-XDeriveFoldable`, you can derive instances of the class
    ``Foldable``, defined in ``Data.Foldable``. See
@@ -4001,14 +4041,19 @@ For a full specification of the algorithms used in :ghc-flag:`-XDeriveFunctor`,
 :ghc-flag:`-XDeriveFoldable`, and :ghc-flag:`-XDeriveTraversable`, see
 :ghc-wiki:`this wiki page <Commentary/Compiler/DeriveFunctor>`.
 
-.. _deriving-typeable:
+.. _deriving-data:
 
-Deriving ``Typeable`` instances
+Deriving ``Data`` instances
 -------------------------------
 
 .. ghc-flag:: -XDeriveDataTypeable
 
-    Enable automatic deriving of instances for the ``Typeable`` typeclass
+    Enable automatic deriving of instances for the ``Data`` typeclass
+
+.. _deriving-typeable:
+
+Deriving ``Typeable`` instances
+-------------------------------
 
 The class ``Typeable`` is very special:
 
@@ -4019,8 +4064,9 @@ The class ``Typeable`` is very special:
    ensures that the programmer cannot subvert the type system by writing
    bogus instances.
 
--  Derived instances of ``Typeable`` are ignored, and may be reported as
-   an error in a later version of the compiler.
+-  Derived instances of ``Typeable`` may be declared if the
+   :ghc-flag:`-XDeriveDataTypeable` extension is enabled, but they are ignored,
+   and they may be reported as an error in a later version of the compiler.
 
 -  The rules for solving \`Typeable\` constraints are as follows:
 
@@ -8943,9 +8989,22 @@ the function is callable. For example: ::
 
 Here ``strange``\'s type is ambiguous, but the call in ``foo`` is OK
 because it gives rise to a constraint ``(D Bool beta)``, which is
-soluble by the ``(D Bool b)`` instance. So the language extension
+soluble by the ``(D Bool b)`` instance.
+
+Another way of getting rid of the ambiguity at the call site is to use
+the :ghc-flag:`-XTypeApplications` flag to specify the types. For example: ::
+
+      class D a b where
+        h :: b
+      instance D Int Int where ...
+
+      main = print (h @Int @Int)
+
+Here ``a`` is ambiguous in the definition of ``D`` but later specified
+to be `Int` using type applications.
+
 :ghc-flag:`-XAllowAmbiguousTypes` allows you to switch off the ambiguity check.
-But even with ambiguity checking switched off, GHC will complain about a
+However, even with ambiguity checking switched off, GHC will complain about a
 function that can *never* be called, such as this one: ::
 
       f :: (Int ~ Bool) => a -> a
@@ -12250,7 +12309,7 @@ If we did it in Haskell source, thus ::
 
    let f = ... in f `seq` body
 
-then ``f``\ 's polymorphic type would get intantiated, so the Core
+then ``f``\ 's polymorphic type would get instantiated, so the Core
 translation would be ::
 
    let f = ... in f Any `seq` body
@@ -12437,7 +12496,6 @@ That being said, with the appropriate use of wrapper datatypes, the
 above limitations induce no loss of generality: ::
 
     {-# LANGUAGE ConstraintKinds           #-}
-    {-# LANGUAGE DeriveDataTypeable        #-}
     {-# LANGUAGE ExistentialQuantification #-}
     {-# LANGUAGE Rank2Types                #-}
     {-# LANGUAGE StandaloneDeriving        #-}
@@ -12448,7 +12506,6 @@ above limitations induce no loss of generality: ::
     import GHC.StaticPtr
 
     data Dict c = c => Dict
-      deriving Typeable
 
     g1 :: Typeable a => StaticPtr (Dict (Show a) -> a -> String)
     g1 = static (\Dict -> show)
@@ -12597,6 +12654,12 @@ are two ways of using these pragmas.
    type constructor ``T`` *or* the data constructor ``T``, or both if
    both are in scope. If both are in scope, there is currently no way to
    specify one without the other (c.f. fixities :ref:`infix-tycons`).
+
+Also note that the argument to ``DEPRECATED`` and ``WARNING`` can also be a list
+of strings, in which case the strings will be presented on separate lines in the
+resulting warning message, ::
+
+    {-# DEPRECATED foo, bar ["Don't use these", "Use gar instead"] #-}
 
 Warnings and deprecations are not reported for (a) uses within the
 defining module, (b) defining a method in a class instance, and (c) uses

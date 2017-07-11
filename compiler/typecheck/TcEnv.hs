@@ -28,7 +28,7 @@ module TcEnv(
         -- Local environment
         tcExtendKindEnv, tcExtendKindEnvList,
         tcExtendTyVarEnv, tcExtendTyVarEnv2,
-        tcExtendLetEnv, tcExtendLetEnvIds,
+        tcExtendLetEnv, tcExtendSigIds, tcExtendRecIds,
         tcExtendIdEnv, tcExtendIdEnv1, tcExtendIdEnv2,
         tcExtendIdBndrs, tcExtendLocalTypeEnv,
         isTypeClosedLetBndr,
@@ -101,7 +101,7 @@ import Encoding
 import FastString
 import ListSetOps
 import Util
-import Maybes( MaybeErr(..) )
+import Maybes( MaybeErr(..), orElse )
 import qualified GHC.LanguageExtensions as LangExt
 
 import Data.IORef
@@ -420,40 +420,51 @@ isTypeClosedLetBndr :: Id -> Bool
 -- See Note [Bindings with closed types] in TcRnTypes
 isTypeClosedLetBndr = noFreeVarsOfType . idType
 
-tcExtendLetEnv :: TopLevelFlag -> IsGroupClosed -> [TcId] -> TcM a -> TcM a
+tcExtendRecIds :: [(Name, TcId)] -> TcM a -> TcM a
+-- Used for binding the recurive uses of Ids in a binding
+-- both top-level value bindings and and nested let/where-bindings
+-- Does not extend the TcIdBinderStack
+tcExtendRecIds pairs thing_inside
+  = tc_extend_local_env NotTopLevel
+          [ (name, ATcId { tct_id   = let_id
+                         , tct_info = NonClosedLet emptyNameSet False })
+          | (name, let_id) <- pairs ] $
+    thing_inside
+
+tcExtendSigIds :: TopLevelFlag -> [TcId] -> TcM a -> TcM a
+-- Used for binding the Ids that have a complete user type signature
+-- Does not extend the TcIdBinderStack
+tcExtendSigIds top_lvl sig_ids thing_inside
+  = tc_extend_local_env top_lvl
+          [ (idName id, ATcId { tct_id   = id
+                              , tct_info = info })
+          | id <- sig_ids
+          , let closed = isTypeClosedLetBndr id
+                info   = NonClosedLet emptyNameSet closed ]
+     thing_inside
+
+
+tcExtendLetEnv :: TopLevelFlag -> TcSigFun -> IsGroupClosed
+                  -> [TcId] -> TcM a -> TcM a
 -- Used for both top-level value bindings and and nested let/where-bindings
 -- Adds to the TcIdBinderStack too
-tcExtendLetEnv top_lvl closed_group ids thing_inside
+tcExtendLetEnv top_lvl sig_fn (IsGroupClosed fvs fv_type_closed)
+               ids thing_inside
   = tcExtendIdBndrs [TcIdBndr id top_lvl | id <- ids] $
-    tcExtendLetEnvIds' top_lvl closed_group
-                       [(idName id, id) | id <- ids]
-                       thing_inside
-
-tcExtendLetEnvIds :: TopLevelFlag -> [(Name, TcId)] -> TcM a -> TcM a
--- Used for both top-level value bindings and and nested let/where-bindings
--- Does not extend the TcIdBinderStack
-tcExtendLetEnvIds top_lvl
-  = tcExtendLetEnvIds' top_lvl ClosedGroup
-
-tcExtendLetEnvIds' :: TopLevelFlag -> IsGroupClosed
-                   -> [(Name,TcId)] -> TcM a
-                   -> TcM a
--- Used for both top-level value bindings and and nested let/where-bindings
--- Does not extend the TcIdBinderStack
-tcExtendLetEnvIds' top_lvl closed_group pairs thing_inside
-  = tc_extend_local_env top_lvl
-      [ (name, ATcId { tct_id = let_id
-                     , tct_info = case closed_group of
-                         ClosedGroup
-                           | isTypeClosedLetBndr let_id -> ClosedLet
-                           | otherwise -> NonClosedLet emptyNameSet False
-                         NonClosedGroup fvs ->
-                           NonClosedLet
-                             (maybe emptyNameSet id $ lookupNameEnv fvs name)
-                             (isTypeClosedLetBndr let_id)
-                     })
-      | (name, let_id) <- pairs ] $
+    tc_extend_local_env top_lvl
+          [ (idName id, ATcId { tct_id   = id
+                              , tct_info = mk_tct_info id })
+          | id <- ids ]
     thing_inside
+  where
+    mk_tct_info id
+      | type_closed && isEmptyNameSet rhs_fvs = ClosedLet
+      | otherwise                             = NonClosedLet rhs_fvs type_closed
+      where
+        name        = idName id
+        rhs_fvs     = lookupNameEnv fvs name `orElse` emptyNameSet
+        type_closed = isTypeClosedLetBndr id &&
+                      (fv_type_closed || hasCompleteSig sig_fn name)
 
 tcExtendIdEnv :: [TcId] -> TcM a -> TcM a
 -- For lambda-bound and case-bound Ids
@@ -470,14 +481,13 @@ tcExtendIdEnv2 :: [(Name,TcId)] -> TcM a -> TcM a
 tcExtendIdEnv2 names_w_ids thing_inside
   = tcExtendIdBndrs [ TcIdBndr mono_id NotTopLevel
                     | (_,mono_id) <- names_w_ids ] $
-    do  { tc_extend_local_env NotTopLevel
-                              [ (name, ATcId { tct_id = id
-                                             , tct_info = NotLetBound })
-                              | (name,id) <- names_w_ids] $
-          thing_inside }
+    tc_extend_local_env NotTopLevel
+            [ (name, ATcId { tct_id = id
+                           , tct_info    = NotLetBound })
+            | (name,id) <- names_w_ids]
+    thing_inside
 
-tc_extend_local_env :: TopLevelFlag -> [(Name, TcTyThing)]
-                    -> TcM a -> TcM a
+tc_extend_local_env :: TopLevelFlag -> [(Name, TcTyThing)] -> TcM a -> TcM a
 tc_extend_local_env top_lvl extra_env thing_inside
 -- Precondition: the argument list extra_env has TcTyThings
 --               that ATcId or ATyVar, but nothing else
@@ -566,7 +576,7 @@ tcExtendIdBndrs bndrs thing_inside
 *                                                                      *
 ********************************************************************* -}
 
-tcAddDataFamConPlaceholders :: [LInstDecl Name] -> TcM a -> TcM a
+tcAddDataFamConPlaceholders :: [LInstDecl GhcRn] -> TcM a -> TcM a
 -- See Note [AFamDataCon: not promoting data family constructors]
 tcAddDataFamConPlaceholders inst_decls thing_inside
   = tcExtendKindEnvList [ (con, APromotionErr FamDataConPE)
@@ -575,30 +585,30 @@ tcAddDataFamConPlaceholders inst_decls thing_inside
       -- Note [AFamDataCon: not promoting data family constructors]
   where
     -- get_cons extracts the *constructor* bindings of the declaration
-    get_cons :: LInstDecl Name -> [Name]
+    get_cons :: LInstDecl GhcRn -> [Name]
     get_cons (L _ (TyFamInstD {}))                     = []
     get_cons (L _ (DataFamInstD { dfid_inst = fid }))  = get_fi_cons fid
     get_cons (L _ (ClsInstD { cid_inst = ClsInstDecl { cid_datafam_insts = fids } }))
       = concatMap (get_fi_cons . unLoc) fids
 
-    get_fi_cons :: DataFamInstDecl Name -> [Name]
+    get_fi_cons :: DataFamInstDecl GhcRn -> [Name]
     get_fi_cons (DataFamInstDecl { dfid_defn = HsDataDefn { dd_cons = cons } })
       = map unLoc $ concatMap (getConNames . unLoc) cons
 
 
-tcAddPatSynPlaceholders :: [PatSynBind Name Name] -> TcM a -> TcM a
+tcAddPatSynPlaceholders :: [PatSynBind GhcRn GhcRn] -> TcM a -> TcM a
 -- See Note [Don't promote pattern synonyms]
 tcAddPatSynPlaceholders pat_syns thing_inside
   = tcExtendKindEnvList [ (name, APromotionErr PatSynPE)
                         | PSB{ psb_id = L _ name } <- pat_syns ]
        thing_inside
 
-getTypeSigNames :: [LSig Name] -> NameSet
+getTypeSigNames :: [LSig GhcRn] -> NameSet
 -- Get the names that have a user type sig
 getTypeSigNames sigs
   = foldr get_type_sig emptyNameSet sigs
   where
-    get_type_sig :: LSig Name -> NameSet -> NameSet
+    get_type_sig :: LSig GhcRn -> NameSet -> NameSet
     get_type_sig sig ns =
       case sig of
         L _ (TypeSig names _) -> extendNameSetList ns (map unLoc names)
@@ -659,7 +669,7 @@ lookup of A won't fail.
 ************************************************************************
 -}
 
-tcExtendRules :: [LRuleDecl Id] -> TcM a -> TcM a
+tcExtendRules :: [LRuleDecl GhcTc] -> TcM a -> TcM a
         -- Just pop the new rules into the EPS and envt resp
         -- All the rules come from an interface file, not source
         -- Nevertheless, some may be for this module, if we read
@@ -833,10 +843,10 @@ data InstBindings a
            --          Used only to improve error messages
       }
 
-instance (OutputableBndrId a) => Outputable (InstInfo a) where
+instance (SourceTextX a, OutputableBndrId a) => Outputable (InstInfo a) where
     ppr = pprInstInfoDetails
 
-pprInstInfoDetails :: (OutputableBndrId a) => InstInfo a -> SDoc
+pprInstInfoDetails :: (SourceTextX a, OutputableBndrId a) => InstInfo a -> SDoc
 pprInstInfoDetails info
    = hang (pprInstanceHdr (iSpec info) <+> text "where")
         2 (details (iBinds info))

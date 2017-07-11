@@ -59,7 +59,6 @@ import VarEnv
 import ErrUtils
 import DynFlags
 import BasicTypes
-import Name   ( Name )
 import Bag
 import Util
 import Pair( pFst )
@@ -800,14 +799,14 @@ tc_sub_type_ds eq_orig inst_orig ctxt ty_actual ty_expected
 -----------------
 -- needs both un-type-checked (for origins) and type-checked (for wrapping)
 -- expressions
-tcWrapResult :: HsExpr Name -> HsExpr TcId -> TcSigmaType -> ExpRhoType
-             -> TcM (HsExpr TcId)
+tcWrapResult :: HsExpr GhcRn -> HsExpr GhcTcId -> TcSigmaType -> ExpRhoType
+             -> TcM (HsExpr GhcTcId)
 tcWrapResult rn_expr = tcWrapResultO (exprCtOrigin rn_expr)
 
 -- | Sometimes we don't have a @HsExpr Name@ to hand, and this is more
 -- convenient.
-tcWrapResultO :: CtOrigin -> HsExpr TcId -> TcSigmaType -> ExpRhoType
-               -> TcM (HsExpr TcId)
+tcWrapResultO :: CtOrigin -> HsExpr GhcTcId -> TcSigmaType -> ExpRhoType
+               -> TcM (HsExpr GhcTcId)
 tcWrapResultO orig expr actual_ty res_ty
   = do { traceTc "tcWrapResult" (vcat [ text "Actual:  " <+> ppr actual_ty
                                       , text "Expected:" <+> ppr res_ty ])
@@ -901,7 +900,7 @@ In some cases we want to deeply instantiate before filling in
 an InferResult, and in some cases not.  That's why InferReult
 has the ir_inst flag.
 
-* ir_inst = True: deeply instantantiate
+* ir_inst = True: deeply instantiate
 
   Consider
     f x = (*)
@@ -921,7 +920,7 @@ has the ir_inst flag.
   Here want to instantiate f's type so that the ?x::Int constraint
   gets discharged by the enclosing implicit-parameter binding.
 
-* ir_inst = False: do not instantantiate
+* ir_inst = False: do not instantiate
 
   Consider this (which uses visible type application):
 
@@ -1198,7 +1197,7 @@ unifyType thing ty1 ty2 = traceTc "utype" (ppr ty1 $$ ppr ty2 $$ ppr thing) >>
 -- | Use this instead of 'Nothing' when calling 'unifyType' without
 -- a good "thing" (where the "thing" has the "actual" type passed in)
 -- This has an 'Outputable' instance, avoiding amgiguity problems.
-noThing :: Maybe (HsExpr Name)
+noThing :: Maybe (HsExpr GhcRn)
 noThing = Nothing
 
 unifyKind :: Outputable a => Maybe a -> TcKind -> TcKind -> TcM CoercionN
@@ -1329,7 +1328,7 @@ uType origin t_or_k orig_ty1 orig_ty2
 
     go (TyConApp tc1 tys1) (TyConApp tc2 tys2)
       -- See Note [Mismatched type lists and application decomposition]
-      | tc1 == tc2, length tys1 == length tys2
+      | tc1 == tc2, equalLength tys1 tys2
       = ASSERT2( isGenerativeTyCon tc1 Nominal, ppr tc1 )
         do { cos <- zipWithM (uType origin t_or_k) tys1 tys2
            ; return $ mkTyConAppCo Nominal tc1 cos }

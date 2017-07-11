@@ -11,6 +11,7 @@ lower levels it is preserved with @let@/@letrec@s).
 -}
 
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module DsBinds ( dsTopLHsBinds, dsLHsBinds, decomposeRuleLhs, dsSpec,
                  dsHsWrapper, dsTcEvBinds, dsTcEvBinds_s, dsEvBinds, dsMkUserRule
@@ -73,7 +74,7 @@ import Control.Monad
 
 -- | Desugar top level binds, strict binds are treated like normal
 -- binds since there is no good time to force before first usage.
-dsTopLHsBinds :: LHsBinds Id -> DsM (OrdList (Id,CoreExpr))
+dsTopLHsBinds :: LHsBinds GhcTc -> DsM (OrdList (Id,CoreExpr))
 dsTopLHsBinds binds
      -- see Note [Strict binds checks]
   | not (isEmptyBag unlifted_binds) || not (isEmptyBag bang_binds)
@@ -102,7 +103,7 @@ dsTopLHsBinds binds
 
 -- | Desugar all other kind of bindings, Ids of strict binds are returned to
 -- later be forced in the binding group body, see Note [Desugar Strict binds]
-dsLHsBinds :: LHsBinds Id -> DsM ([Id], [(Id,CoreExpr)])
+dsLHsBinds :: LHsBinds GhcTc -> DsM ([Id], [(Id,CoreExpr)])
 dsLHsBinds binds
   = do { MASSERT( allBag (not . isUnliftedHsBind . unLoc) binds )
        ; ds_bs <- mapBagM dsLHsBind binds
@@ -110,14 +111,14 @@ dsLHsBinds binds
                          id ([], []) ds_bs) }
 
 ------------------------
-dsLHsBind :: LHsBind Id
+dsLHsBind :: LHsBind GhcTc
           -> DsM ([Id], [(Id,CoreExpr)])
 dsLHsBind (L loc bind) = do dflags <- getDynFlags
                             putSrcSpanDs loc $ dsHsBind dflags bind
 
 -- | Desugar a single binding (or group of recursive binds).
 dsHsBind :: DynFlags
-         -> HsBind Id
+         -> HsBind GhcTc
          -> DsM ([Id], [(Id,CoreExpr)])
          -- ^ The Ids of strict binds, to be forced in the body of the
          -- binding group see Note [Desugar Strict binds] and all
@@ -139,8 +140,8 @@ dsHsBind dflags
         ; return (force_var, [core_bind]) }
 
 dsHsBind dflags
-         (FunBind { fun_id = L _ fun, fun_matches = matches
-                  , fun_co_fn = co_fn, fun_tick = tick })
+         b@(FunBind { fun_id = L _ fun, fun_matches = matches
+                    , fun_co_fn = co_fn, fun_tick = tick })
  = do   { (args, body) <- matchWrapper
                            (mkPrefixFunRhs (noLoc $ idName fun))
                            Nothing matches
@@ -148,12 +149,16 @@ dsHsBind dflags
         ; let body' = mkOptTickBox tick body
               rhs   = core_wrap (mkLams args body')
               core_binds@(id,_) = makeCorePair dflags fun False 0 rhs
-              force_var =
-                if xopt LangExt.Strict dflags
-                   && matchGroupArity matches == 0 -- no need to force lambdas
-                then [id]
-                else []
-        ; {- pprTrace "dsHsBind" (ppr fun <+> ppr (idInlinePragma fun)) $ -}
+              force_var
+                  -- Bindings are strict when -XStrict is enabled
+                | xopt LangExt.Strict dflags
+                , matchGroupArity matches == 0 -- no need to force lambdas
+                = [id]
+                | isBangedBind b
+                = [id]
+                | otherwise
+                = []
+        ; --pprTrace "dsHsBind" (ppr fun <+> ppr (idInlinePragma fun) $$ ppr (mg_alts matches) $$ ppr args $$ ppr core_binds) $
            return (force_var, [core_binds]) }
 
 dsHsBind dflags
@@ -181,11 +186,11 @@ dsHsBind dflags
   | ABE { abe_wrap = wrap, abe_poly = global
         , abe_mono = local, abe_prags = prags } <- export
   , not (xopt LangExt.Strict dflags)             -- Handle strict binds
-  , not (anyBag (isBangedPatBind . unLoc) binds) --        in the next case
+  , not (anyBag (isBangedBind . unLoc) binds)    --        in the next case
   = -- See Note [AbsBinds wrappers] in HsBinds
     addDictsDs (toTcTypeBag (listToBag dicts)) $
          -- addDictsDs: push type constraints deeper for pattern match check
-    do { (_, bind_prs) <- dsLHsBinds binds
+    do { (force_vars, bind_prs) <- dsLHsBinds binds
        ; ds_binds <- dsTcEvBinds_s ev_binds
        ; core_wrap <- dsHsWrapper wrap -- Usually the identity
 
@@ -200,7 +205,8 @@ dsHsBind dflags
                main_bind = makeCorePair dflags global' (isDefaultMethod prags)
                                         (dictArity dicts) rhs
 
-       ; return ([], main_bind : fromOL spec_binds) }
+       ; ASSERT(null force_vars)
+         return ([], main_bind : fromOL spec_binds) }
 
         -- Another common case: no tyvars, no dicts
         -- In this case we can have a much simpler desugaring
@@ -275,7 +281,7 @@ dsHsBind dflags
                  ,(poly_tup_id, poly_tup_rhs) :
                    concat export_binds_s) }
   where
-    inline_env :: IdEnv Id   -- Maps a monomorphic local Id to one with
+    inline_env :: IdEnv Id -- Maps a monomorphic local Id to one with
                              -- the inline pragma from the source
                              -- The type checker put the inline pragma
                              -- on the *global* Id, so we need to transfer it
@@ -302,7 +308,7 @@ dsHsBind dflags
             [] lcls
 
     -- find exports or make up new exports for force variables
-    get_exports :: [Id] -> DsM ([Id], [ABExport Id])
+    get_exports :: [Id] -> DsM ([Id], [ABExport GhcTc])
     get_exports lcls =
       foldM (\(glbls, exports) lcl ->
               case lookupVarEnv global_env lcl of
@@ -342,6 +348,8 @@ dsHsBind dflags (AbsBindsSig { abs_tvs = tyvars, abs_ev_vars = dicts
                | xopt LangExt.Strict dflags
                , matchGroupArity matches == 0 -- no need to force lambdas
                = [global]
+               | isBangedBind (unLoc bind)
+               = [global]
                | otherwise
                = []
 
@@ -373,7 +381,8 @@ dsHsBind _ (PatSynBind{}) = panic "dsHsBind: PatSynBind"
 -- the unfolding in the interface file is made in `TidyPgm.addExternal`
 -- using this information.
 ------------------------
-makeCorePair :: DynFlags -> Id -> Bool -> Arity -> CoreExpr -> (Id, CoreExpr)
+makeCorePair :: DynFlags -> Id -> Bool -> Arity -> CoreExpr
+             -> (Id, CoreExpr)
 makeCorePair dflags gbl_id is_default_method dict_arity rhs
   | is_default_method                 -- Default methods are *always* inlined
   = (gbl_id `setIdUnfolding` mkCompulsoryUnfolding rhs, rhs)
@@ -420,7 +429,7 @@ Note [Rules and inlining]
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 Common special case: no type or dictionary abstraction
 This is a bit less trivial than you might suppose
-The naive way woudl be to desguar to something like
+The naive way would be to desugar to something like
         f_lcl = ...f_lcl...     -- The "binds" from AbsBinds
         M.f = f_lcl             -- Generated from "exports"
 But we don't want that, because if M.f isn't exported,

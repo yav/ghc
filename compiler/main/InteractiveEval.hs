@@ -80,6 +80,7 @@ import RtClosureInspect
 import Outputable
 import FastString
 import Bag
+import Util
 import qualified Lexer (P (..), ParseResult(..), unP, mkPState)
 import qualified Parser (parseStmt, parseModule, parseDeclaration, parseImport)
 
@@ -245,7 +246,7 @@ withVirtualCWD m = do
 
   gbracket set_cwd reset_cwd $ \_ -> m
 
-parseImportDecl :: GhcMonad m => String -> m (ImportDecl RdrName)
+parseImportDecl :: GhcMonad m => String -> m (ImportDecl GhcPs)
 parseImportDecl expr = withSession $ \hsc_env -> liftIO $ hscImport hsc_env expr
 
 emptyHistory :: Int -> BoundedList History
@@ -400,7 +401,7 @@ moveHist fn = do
             history = resumeHistory r
             new_ix = fn ix
         --
-        when (new_ix > length history) $ liftIO $
+        when (history `lengthLessThan` new_ix) $ liftIO $
            throwGhcExceptionIO (ProgramError "no more logged breakpoints")
         when (new_ix < 0) $ liftIO $
            throwGhcExceptionIO (ProgramError "already at the beginning of the history")
@@ -673,7 +674,7 @@ findGlobalRdrEnv hsc_env imports
            ([], imods_env) -> Right (foldr plusGlobalRdrEnv idecls_env imods_env)
            (err : _, _)    -> Left err }
   where
-    idecls :: [LImportDecl RdrName]
+    idecls :: [LImportDecl GhcPs]
     idecls = [noLoc d | IIDecl d <- imports]
 
     imods :: [ModuleName]
@@ -840,7 +841,7 @@ typeKind normalise str = withSession $ \hsc_env -> do
 
 -- | Parse an expression, the parsed expression can be further processed and
 -- passed to compileParsedExpr.
-parseExpr :: GhcMonad m => String -> m (LHsExpr RdrName)
+parseExpr :: GhcMonad m => String -> m (LHsExpr GhcPs)
 parseExpr expr = withSession $ \hsc_env -> do
   liftIO $ runInteractiveHsc hsc_env $ hscParseExpr expr
 
@@ -858,7 +859,7 @@ compileExprRemote expr = do
 
 -- | Compile an parsed expression (before renaming), run it and deliver
 -- the resulting HValue.
-compileParsedExprRemote :: GhcMonad m => LHsExpr RdrName -> m ForeignHValue
+compileParsedExprRemote :: GhcMonad m => LHsExpr GhcPs -> m ForeignHValue
 compileParsedExprRemote expr@(L loc _) = withSession $ \hsc_env -> do
   -- > let _compileParsedExpr = expr
   -- Create let stmt from expr to make hscParsedStmt happy.
@@ -878,7 +879,7 @@ compileParsedExprRemote expr@(L loc _) = withSession $ \hsc_env -> do
       liftIO $ throwIO (fromSerializableException e)
     _ -> panic "compileParsedExpr"
 
-compileParsedExpr :: GhcMonad m => LHsExpr RdrName -> m HValue
+compileParsedExpr :: GhcMonad m => LHsExpr GhcPs -> m HValue
 compileParsedExpr expr = do
    fhv <- compileParsedExprRemote expr
    dflags <- getDynFlags

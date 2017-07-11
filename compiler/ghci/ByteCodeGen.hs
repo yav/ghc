@@ -600,7 +600,7 @@ schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1, bind2], rhs)])
 
 schemeE d s p (AnnCase scrut bndr _ [(DataAlt dc, [bind1], rhs)])
    | isUnboxedTupleCon dc
-   , length (typePrimRep (idType bndr)) <= 1 -- handles unit tuples
+   , typePrimRep (idType bndr) `lengthAtMost` 1 -- handles unit tuples
    = doCase d s p scrut bind1 [(DEFAULT, [], rhs)] (Just bndr)
 
 schemeE d s p (AnnCase scrut bndr _ alt@[(DEFAULT, [], _)])
@@ -729,7 +729,7 @@ mkConAppCode _ _ _ con []       -- Nullary constructor
         -- copy of this constructor, use the single shared version.
 
 mkConAppCode orig_d _ p con args_r_to_l
-  = ASSERT( dataConRepArity con == length args_r_to_l )
+  = ASSERT( args_r_to_l `lengthIs` dataConRepArity con )
     do_pushery orig_d (non_ptr_args ++ ptr_args)
  where
         -- The args are already in reverse order, which is the way PACK
@@ -1164,8 +1164,12 @@ generateCCall d0 s p (CCallSpec target cconv safety) fn args_r_to_l
 
      let
          -- do the call
-         do_call      = unitOL (CCALL stk_offset token
-                                 (fromIntegral (fromEnum (playInterruptible safety))))
+         do_call      = unitOL (CCALL stk_offset token flags)
+           where flags = case safety of
+                           PlaySafe          -> 0x0
+                           PlayInterruptible -> 0x1
+                           PlayRisky         -> 0x2
+
          -- slide and return
          wrapup       = mkSLIDE r_sizeW (d_after_r - fromIntegral r_sizeW - s)
                         `snocOL` RETURN_UBX (toArgRep r_rep)

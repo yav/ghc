@@ -115,6 +115,16 @@
    cap->r.rRet = (retcode);                     \
    return cap;
 
+// Note [avoiding threadPaused]
+//
+// Switching between the interpreter to compiled code can happen very
+// frequently, so we don't want to call threadPaused(), which is
+// expensive.  BUT we must be careful not to violate the invariant
+// that threadPaused() has been called on all threads before we GC
+// (see Note [upd-black-hole].  So the scheduler must ensure that when
+// we return in this way that we definitely immediately run the thread
+// again and don't GC or do something else.
+//
 #define RETURN_TO_SCHEDULER_NO_PAUSE(todo,retcode)      \
    SAVE_THREAD_STATE();                                 \
    cap->r.rCurrentTSO->what_next = (todo);              \
@@ -275,7 +285,7 @@ interpretBCO (Capability* cap)
     // that these entities are non-aliasable.
     register StgPtr       Sp;    // local state -- stack pointer
     register StgPtr       SpLim; // local state -- stack lim pointer
-    register StgClosure   *tagged_obj = 0, *obj;
+    register StgClosure   *tagged_obj = 0, *obj = NULL;
     uint32_t n, m;
 
     LOAD_THREAD_STATE();
@@ -396,8 +406,18 @@ eval_obj:
     case FUN_STATIC:
 #if defined(PROFILING)
         if (cap->r.rCCCS != obj->header.prof.ccs) {
+            int arity = get_fun_itbl(obj)->f.arity;
+            // Tag the function correctly.  We guarantee that pap->fun
+            // is correctly tagged (this is checked by
+            // Sanity.c:checkPAP()), but we don't guarantee that every
+            // pointer to a FUN is tagged on the stack or elsewhere,
+            // so we fix the tag here. (#13767)
+            // For full details of the invariants on tagging, see
+            // https://ghc.haskell.org/trac/ghc/wiki/Commentary/Rts/HaskellExecution/PointerTagging
             tagged_obj =
-                newEmptyPAP(cap, tagged_obj, get_fun_itbl(obj)->f.arity);
+                newEmptyPAP(cap,
+                            arity <= TAG_MASK ? obj + arity : obj,
+                            arity);
         }
 #endif
         break;
@@ -414,7 +434,7 @@ eval_obj:
         ASSERT(((StgBCO *)obj)->arity > 0);
 #if defined(PROFILING)
         if (cap->r.rCCCS != obj->header.prof.ccs) {
-            tagged_obj = newEmptyPAP(cap, tagged_obj, ((StgBCO *)obj)->arity);
+            tagged_obj = newEmptyPAP(cap, obj, ((StgBCO *)obj)->arity);
         }
 #endif
         break;
@@ -1588,7 +1608,9 @@ run_BCO:
             void *tok;
             int stk_offset            = BCO_NEXT;
             int o_itbl                = BCO_GET_LARGE_ARG;
-            int interruptible         = BCO_NEXT;
+            int flags                 = BCO_NEXT;
+            bool interruptible        = flags & 0x1;
+            bool unsafe_call          = flags & 0x2;
             void(*marshall_fn)(void*) = (void (*)(void*))BCO_LIT(o_itbl);
 
             /* the stack looks like this:
@@ -1676,15 +1698,19 @@ run_BCO:
             Sp[1] = (W_)obj;
             Sp[0] = (W_)&stg_ret_p_info;
 
-            SAVE_THREAD_STATE();
-            tok = suspendThread(&cap->r, interruptible);
+            if (!unsafe_call) {
+                SAVE_THREAD_STATE();
+                tok = suspendThread(&cap->r, interruptible);
+            }
 
             // We already made a copy of the arguments above.
             ffi_call(cif, fn, ret, argptrs);
 
             // And restart the thread again, popping the stg_ret_p frame.
-            cap = (Capability *)((void *)((unsigned char*)resumeThread(tok) - STG_FIELD_OFFSET(Capability,r)));
-            LOAD_THREAD_STATE();
+            if (!unsafe_call) {
+                cap = (Capability *)((void *)((unsigned char*)resumeThread(tok) - STG_FIELD_OFFSET(Capability,r)));
+                LOAD_THREAD_STATE();
+            }
 
             if (Sp[0] != (W_)&stg_ret_p_info) {
                 // the stack is not how we left it.  This probably
