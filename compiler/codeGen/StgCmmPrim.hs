@@ -310,6 +310,18 @@ emitPrimOp dflags [res] ReadMutVarOp [mutv]
    = emitAssign (CmmLocal res) (cmmLoadIndexW dflags mutv (fixedHdrSizeW dflags) (gcWord dflags))
 
 
+emitPrimOp dflags res@[] WriteMutVarOp [mutv,var]
+   = do -- Without this write barrier, other CPUs may see this pointer before
+        -- the writes for the closure it points to have occurred.
+        emitPrimCall res MO_WriteBarrier []
+        emitStore (cmmOffsetW dflags mutv (fixedHdrSizeW dflags)) var
+        emitCCall
+                [{-no results-}]
+                (CmmLit (CmmLabel mkDirty_MUT_VAR_Label))
+                [(CmmReg (CmmGlobal BaseReg), AddrHint), (mutv,AddrHint)]
+
+
+
 
 emitPrimOp df [r] ReadRefOp       [b,o] = readMutField df r b o (gcWord df)
 emitPrimOp df [r] ReadRefIntOp    [b,o] = readMutField df r b o (bWord  df)
@@ -320,7 +332,6 @@ emitPrimOp df [r] ReadRefAddrOp   [b,o] = readMutField df r b o (bWord df)
 emitPrimOp df [r] ReadRefFloatOp  [b,o] = readMutField df r b o f32
 emitPrimOp df [r] ReadRefDoubleOp [b,o] = readMutField df r b o f64
 
--- emitPrimOp df [] WriteRefOp       [b,o,v] = XXX: write barrier
 emitPrimOp df [] WriteRefIntOp    [b,o,v] = writeMutField df b o v
 emitPrimOp df [] WriteRefWordOp   [b,o,v] = writeMutField df b o v
 emitPrimOp df [] WriteRefInt64Op  [b,o,v] = writeMutField df b o v
@@ -328,26 +339,17 @@ emitPrimOp df [] WriteRefWord64Op [b,o,v] = writeMutField df b o v
 emitPrimOp df [] WriteRefAddrOp   [b,o,v] = writeMutField df b o v
 emitPrimOp df [] WriteRefFloatOp  [b,o,v] = writeMutField df b o v
 emitPrimOp df [] WriteRefDoubleOp [b,o,v] = writeMutField df b o v
+emitPrimOp df res@[] WriteRefOp       [b,o,v] =
+  do emitPrimCall res MO_WriteBarrier []
+     writeMutField df b o v
+     emitCCall [{-no results-}]
+        (CmmLit (CmmLabel mkDirty_MUT_CONSTR_Label))
+                [ (CmmReg (CmmGlobal BaseReg), AddrHint)
+                , (b, AddrHint) -- base
+                , (o, NoHint)   -- offset
+                ]
 
 
-
-
-
-
-
-
-
-
-
-emitPrimOp dflags res@[] WriteMutVarOp [mutv,var]
-   = do -- Without this write barrier, other CPUs may see this pointer before
-        -- the writes for the closure it points to have occurred.
-        emitPrimCall res MO_WriteBarrier []
-        emitStore (cmmOffsetW dflags mutv (fixedHdrSizeW dflags)) var
-        emitCCall
-                [{-no results-}]
-                (CmmLit (CmmLabel mkDirty_MUT_VAR_Label))
-                [(CmmReg (CmmGlobal BaseReg), AddrHint), (mutv,AddrHint)]
 
 --  #define sizzeofByteArrayzh(r,a) \
 --     r = ((StgArrBytes *)(a))->bytes
@@ -2280,33 +2282,36 @@ emitCtzCall res x width = do
 readMutField :: DynFlags {-^ Info about environment -}    ->
                 LocalReg {-^ Store result here -}         ->
                 CmmExpr  {-^ Untagged pointer to value -} ->
-                CmmExpr  {-^ Index (in words) to field -} ->
+                CmmExpr  {-^ Field number -}              ->
                 CmmType  {-^ Type of field -}             ->
                 FCode ()
 readMutField dflags res base offset ty =
   emitAssign (CmmLocal res)
     (cmmLoadIndexOffExpr dflags
-      (fixedHdrSize dflags)
+      (fixedHdrSize dflags + word) -- skip header and card_table
       ty
       base
       (gcWord dflags) -- offset is in words
       offset)
+  where
+  word = widthInBytes (typeWidth (gcWord dflags))
 
 -- | Set the value of a mutable field of the given type.
 writeMutField :: DynFlags {-^ Info about environment -}      ->
                  CmmExpr  {-^ Untagged pointer to value -}   ->
-                 CmmExpr  {-^ Index (in words) to field -}   ->
+                 CmmExpr  {-^ Field number -}                ->
                  CmmExpr  {-^ Value to store in the field -} ->
                  FCode ()
 writeMutField dflags base offset val =
   emitStore
     (cmmIndexOffExpr dflags
-      (fixedHdrSize dflags)
-      (typeWidth (gcWord dflags))
+      (fixedHdrSize dflags + widthInBytes word) -- skip header and card_table
+      word
       base
       offset)
     val
-
+  where
+  word = typeWidth (gcWord dflags)
 
 
 

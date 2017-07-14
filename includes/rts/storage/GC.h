@@ -230,6 +230,9 @@ void setKeepCAFs (void);
 
 void dirty_MUT_VAR(StgRegTable *reg, StgClosure *p);
 
+// This is the write barrier for mutable constructor fields.
+void dirty_MUT_CONSTR(StgRegTable *reg, StgMutConstr *p, StgWord field);
+
 /* set to disable CAF garbage collection in GHCi. */
 /* (needed when dynamic libraries are used). */
 extern bool keepCAFs;

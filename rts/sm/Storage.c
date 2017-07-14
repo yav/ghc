@@ -1064,6 +1064,18 @@ dirty_MUT_VAR(StgRegTable *reg, StgClosure *p)
     }
 }
 
+/* This is the write barrier used when writing to boxed fields
+   of mutable constructors. */
+void
+dirty_MUT_CONSTR(StgRegTable *reg, StgMutConstr *p, StgWord ix)
+{
+    if (p->card_table == 0) {
+      // Clean becoming dirty
+      recordClosureMutated(regTableToCapability(reg), (StgClosure*)p);
+    }
+    p->card_table |= (1 << ix);   // mark field as dirty
+}
+
 void
 dirty_TVAR(Capability *cap, StgTVar *p)
 {

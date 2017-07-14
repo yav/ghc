@@ -3299,6 +3299,12 @@ primop ReadRefDoubleOp "readRefDoubleRep#" GenPrimOp
 
 
 
+primop WriteRefOp "writeRef#" GenPrimOp
+  Ref# LiftedRep s a -> a -> State# s -> State# s
+  {Set the value of a boxed mutable field. It is OK to store a thunk.}
+  with
+  has_side_effects = True
+
 primop WriteRefIntOp "writeRefIntRep#" GenPrimOp
   Ref# IntRep s Int# -> Int# -> State# s -> State# s
  {Set the value of an Int# mutable field.}

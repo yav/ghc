@@ -49,6 +49,7 @@ module CLabel (
 
         mkSplitMarkerLabel,
         mkDirty_MUT_VAR_Label,
+        mkDirty_MUT_CONSTR_Label,
         mkUpdInfoLabel,
         mkBHUpdInfoLabel,
         mkIndStaticInfoLabel,
@@ -492,8 +493,9 @@ mkDirty_MUT_VAR_Label, mkSplitMarkerLabel, mkUpdInfoLabel,
     mkEMPTY_MVAR_infoLabel, mkTopTickyCtrLabel,
     mkCAFBlackHoleInfoTableLabel, mkCAFBlackHoleEntryLabel,
     mkArrWords_infoLabel, mkSMAP_FROZEN_infoLabel, mkSMAP_FROZEN0_infoLabel,
-    mkSMAP_DIRTY_infoLabel :: CLabel
+    mkSMAP_DIRTY_infoLabel, mkDirty_MUT_CONSTR_Label :: CLabel
 mkDirty_MUT_VAR_Label           = mkForeignLabel (fsLit "dirty_MUT_VAR") Nothing ForeignLabelInExternalPackage IsFunction
+mkDirty_MUT_CONSTR_Label        = mkForeignLabel (fsLit "dirty_MUT_CONSTR") Nothing ForeignLabelInExternalPackage IsFunction
 mkSplitMarkerLabel              = CmmLabel rtsUnitId (fsLit "__stg_split_marker")    CmmCode
 mkUpdInfoLabel                  = CmmLabel rtsUnitId (fsLit "stg_upd_frame")         CmmInfo
 mkBHUpdInfoLabel                = CmmLabel rtsUnitId (fsLit "stg_bh_upd_frame" )     CmmInfo
