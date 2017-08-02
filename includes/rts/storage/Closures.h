@@ -480,7 +480,7 @@ typedef struct StgCompactNFData_ {
   Constructors with mutable fields
 ----------------------------------------------------------------------------- */
 
-typedef struct StgMutConstr_ {
+typedef struct {
   StgHeader header;
   StgWord   card_table;
   /* Bitmap of dirty pointers.
@@ -489,6 +489,11 @@ typedef struct StgMutConstr_ {
      Note that we just use a word for this, so
      this object type does not support more than
      size_of(StgWord) mutable pointers. */
+} StgMutConstrHeader;
+
+
+typedef struct StgMutConstr_ {
+  StgMutConstrHeader header;
 
   StgClosure *payload[];
   /* The payload:

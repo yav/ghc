@@ -648,7 +648,7 @@ scavenge_block (bdescr *bd)
         gct->eager_promotion = saved_eager_promotion;
 
         if (!gct->failed_to_evac) {
-          m->card_table = 0;    // Make it clean
+          m->header.card_table = 0;    // Make it clean
         }
 
         p += info->layout.payload.nptrs;
@@ -1166,7 +1166,7 @@ scavenge_mark_stack(void)
           gct->eager_promotion = saved_eager_promotion;
 
           if (!gct->failed_to_evac) {
-              m->card_table = 0; // Make it clean
+              m->header.card_table = 0; // Make it clean
           }
 
           break;
@@ -1564,7 +1564,7 @@ scavenge_one(StgPtr p)
 
     case MUT_CONSTR: {
       StgMutConstr *m = (StgMutConstr *) p;
-      StgWord todo = m->card_table;
+      StgWord todo = m->header.card_table;
       StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
 
       gct->eager_promotion = false;
@@ -1577,7 +1577,7 @@ scavenge_one(StgPtr p)
       gct->eager_promotion = saved_eager_promotion;
 
       if (!gct->failed_to_evac) {
-        m->card_table = 0;  // make it clean
+        m->header.card_table = 0;  // make it clean
       }
 
       break;

@@ -50,6 +50,7 @@ import BasicTypes
 import Outputable
 import FastString
 import DynFlags
+import DataCon(isMutableDataCon)
 
 import Control.Monad
 
@@ -113,7 +114,8 @@ cgTopRhsClosure dflags rec id ccs _ upd_flag args body =
                  -- BUILD THE OBJECT, AND GENERATE INFO TABLE (IF NECESSARY)
         ; emitDataLits closure_label closure_rep
         ; let fv_details :: [(NonVoid Id, VirtualHpOffset)]
-              (_, _, fv_details) = mkVirtHeapOffsets dflags (isLFThunk lf_info) []
+              (_, _, fv_details) = mkVirtHeapOffsets dflags
+                                                      (customHeader lf_info) []
         -- Don't drop the non-void args until the closure info has been made
         ; forkClosureBody (closureCodeBody True id closure_info ccs
                                 (nonVoidIds args) (length args) body fv_details)
@@ -122,6 +124,13 @@ cgTopRhsClosure dflags rec id ccs _ upd_flag args body =
 
   unLit (CmmLit l) = l
   unLit _ = panic "unLit"
+
+customHeader :: LambdaFormInfo -> CustomHeader
+customHeader lf_info
+  | isLFThunk lf_info = CustomHeaderThunk
+  | otherwise = case maybeIsLFCon lf_info of
+                  Just con | isMutableDataCon con -> CustomHeaderMutConstr
+                  _                               -> CustomHeaderNone
 
 ------------------------------------------------------------------------
 --              Non-top-level bindings
@@ -272,11 +281,12 @@ mkRhsClosure    dflags bndr _cc _bi
   , StgCase (StgApp scrutinee [{-no args-}])
          _   -- ignore bndr
          (AlgAlt _)
-         [(DataAlt _, params, sel_expr)] <- strip expr
+         [(DataAlt con, params, sel_expr)] <- strip expr
   , StgApp selectee [{-no args-}] <- strip sel_expr
   , the_fv == scrutinee                -- Scrutinee is the only free variable
 
-  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags (addIdReps (assertNonVoidIds params))
+  , let (_, _, params_w_offsets) = mkVirtConstrOffsets dflags (isMutableDataCon con)
+                                        (addIdReps (assertNonVoidIds params))
                                    -- pattern binders are always non-void,
                                    -- see Note [Post-unarisation invariants] in UnariseStg
   , Just the_offset <- assocMaybe params_w_offsets (NonVoid selectee)
@@ -293,7 +303,9 @@ mkRhsClosure    dflags bndr _cc _bi
     --
     -- srt is discarded; it must be empty
     let lf_info = mkSelectorLFInfo bndr offset_into_int (isUpdatable upd_flag)
-    in cgRhsStdThunk bndr lf_info [StgVarArg the_fv]
+    in if isMutableDataCon con
+          then error "XXX: mkRhsClosure NOT IMPLEMENTED for mutable constructors"
+          else cgRhsStdThunk bndr lf_info [StgVarArg the_fv]
 
 ---------- Note [Ap thunks] ------------------
 mkRhsClosure    dflags bndr _cc _bi
@@ -351,7 +363,7 @@ mkRhsClosure dflags bndr cc _ fvs upd_flag args body
                 descr = closureDescription dflags mod_name name
                 fv_details :: [(NonVoid Id, ByteOff)]
                 (tot_wds, ptr_wds, fv_details)
-                   = mkVirtHeapOffsets dflags (isLFThunk lf_info)
+                   = mkVirtHeapOffsets dflags (customHeader lf_info)
                                        (addIdReps reduced_fvs)
                 closure_info = mkClosureInfo dflags False       -- Not static
                                              bndr lf_info tot_wds ptr_wds
@@ -396,7 +408,7 @@ cgRhsStdThunk bndr lf_info payload
     mod_name <- getModuleName
   ; dflags <- getDynFlags
   ; let (tot_wds, ptr_wds, payload_w_offsets)
-            = mkVirtHeapOffsets dflags (isLFThunk lf_info)
+            = mkVirtHeapOffsets dflags (customHeader lf_info)
                                 (addArgReps (nonVoidStgArgs payload))
 
         descr = closureDescription dflags mod_name (idName bndr)

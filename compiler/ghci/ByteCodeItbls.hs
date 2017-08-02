@@ -15,7 +15,7 @@ import DynFlags
 import HscTypes
 import Name             ( Name, getName )
 import NameEnv
-import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity )
+import DataCon          ( DataCon, dataConRepArgTys, dataConIdentity, isMutableDataCon )
 import TyCon            ( TyCon, tyConFamilySize, isDataTyCon, tyConDataCons )
 import RepType
 import StgCmmLayout     ( mkVirtConstrSizes )
@@ -59,7 +59,7 @@ make_constr_itbls hsc_env cons =
                     , prim_rep <- typePrimRep arg ]
 
          (tot_wds, ptr_wds) =
-             mkVirtConstrSizes dflags rep_args
+             mkVirtConstrSizes dflags (isMutableDataCon dcon) rep_args
 
          ptrs'  = ptr_wds
          nptrs' = tot_wds - ptr_wds

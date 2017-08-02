@@ -79,7 +79,8 @@ cgTopRhsCon dflags id con args =
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds, --  #ptr_wds
-             nv_args_w_offsets) = mkVirtConstrOffsets dflags (addArgReps args)
+             nv_args_w_offsets) = mkVirtConstrOffsets dflags
+                                    (isMutableDataCon con) (addArgReps args)
 
             nonptr_wds = tot_wds - ptr_wds
 
@@ -227,7 +228,8 @@ buildDynCon' dflags _ binder actually_bound ccs con args
 
   gen_code reg
     = do  { let (tot_wds, ptr_wds, args_w_offsets)
-                  = mkVirtConstrOffsets dflags (addArgReps args)
+                  = mkVirtConstrOffsets dflags (isMutableDataCon con)
+                                               (addArgReps args)
                 nonptr_wds = tot_wds - ptr_wds
                 info_tbl = mkDataConInfoTable dflags con False
                                 ptr_wds nonptr_wds
@@ -257,7 +259,9 @@ bindConArgs :: AltCon -> LocalReg -> [NonVoid Id] -> FCode [LocalReg]
 bindConArgs (DataAlt con) base args
   = ASSERT(not (isUnboxedTupleCon con))
     do dflags <- getDynFlags
-       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags (addIdReps args)
+       let (_, _, args_w_offsets) = mkVirtConstrOffsets dflags
+                                        (isMutableDataCon con)
+                                        (addIdReps args)
            tag = tagForCon dflags con
 
            -- The binding below forces the masking out of the tag bits

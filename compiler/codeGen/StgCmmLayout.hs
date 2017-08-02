@@ -19,7 +19,8 @@ module StgCmmLayout (
 
         mkVirtHeapOffsets, mkVirtConstrOffsets, mkVirtConstrSizes, getHpRelOffset,
 
-        ArgRep(..), toArgRep, argRepSizeW -- re-exported from StgCmmArgRep
+        ArgRep(..), toArgRep, argRepSizeW, -- re-exported from StgCmmArgRep
+        CustomHeader(..)
   ) where
 
 
@@ -387,9 +388,13 @@ getHpRelOffset virtual_offset
        hp_usg <- getHpUsage
        return (cmmRegOffW dflags hpReg (hpRel (realHp hp_usg) virtual_offset))
 
+data CustomHeader = CustomHeaderNone
+                  | CustomHeaderThunk
+                  | CustomHeaderMutConstr
+
 mkVirtHeapOffsets
   :: DynFlags
-  -> Bool                     -- True <=> is a thunk
+  -> CustomHeader             -- ^ do we have a custom header size
   -> [NonVoid (PrimRep,a)]    -- Things to make offsets for
   -> (WordOff,                -- _Total_ number of words allocated
       WordOff,                -- Number of words allocated for *pointers*
@@ -402,15 +407,17 @@ mkVirtHeapOffsets
 -- mkVirtHeapOffsets always returns boxed things with smaller offsets
 -- than the unboxed things
 
-mkVirtHeapOffsets dflags is_thunk things
+mkVirtHeapOffsets dflags custom_header things
   = ASSERT(not (any (isVoidRep . fst . fromNonVoid) things))
     ( bytesToWordsRoundUp dflags tot_bytes
     , bytesToWordsRoundUp dflags bytes_of_ptrs
     , ptrs_w_offsets ++ non_ptrs_w_offsets
     )
   where
-    hdr_words | is_thunk   = thunkHdrSize dflags
-              | otherwise  = fixedHdrSizeW dflags
+    hdr_words = case custom_header of
+                  CustomHeaderMutConstr -> mutableConstrHdrSizeW dflags
+                  CustomHeaderThunk     -> thunkHdrSize dflags
+                  CustomHeaderNone      -> fixedHdrSizeW dflags
     hdr_bytes = wordsToBytes dflags hdr_words
 
     (ptrs, non_ptrs) = partition (isGcPtrRep . fst . fromNonVoid) things
@@ -427,19 +434,23 @@ mkVirtHeapOffsets dflags is_thunk things
 
 -- | Just like mkVirtHeapOffsets, but for constructors
 mkVirtConstrOffsets
-  :: DynFlags -> [NonVoid (PrimRep, a)]
+  :: DynFlags -> Bool {-^ Is it mutable? -} -> [NonVoid (PrimRep, a)]
   -> (WordOff, WordOff, [(NonVoid a, ByteOff)])
-mkVirtConstrOffsets dflags = mkVirtHeapOffsets dflags False
+mkVirtConstrOffsets dflags mut = mkVirtHeapOffsets dflags custom_hdr
+  where custom_hdr = if mut then CustomHeaderMutConstr
+                            else CustomHeaderNone
+
+
 
 -- | Just like mkVirtConstrOffsets, but used when we don't have the actual
 -- arguments. Useful when e.g. generating info tables; we just need to know
 -- sizes of pointer and non-pointer fields.
-mkVirtConstrSizes :: DynFlags -> [NonVoid PrimRep] -> (WordOff, WordOff)
-mkVirtConstrSizes dflags field_reps
+mkVirtConstrSizes :: DynFlags -> Bool {-^ Is it mutable? -} -> [NonVoid PrimRep] -> (WordOff, WordOff)
+mkVirtConstrSizes dflags mut field_reps
   = (tot_wds, ptr_wds)
   where
     (tot_wds, ptr_wds, _) =
-       mkVirtConstrOffsets dflags
+       mkVirtConstrOffsets dflags mut
          (map (\nv_rep -> NonVoid (fromNonVoid nv_rep, ())) field_reps)
 
 -------------------------------------------------------------------------

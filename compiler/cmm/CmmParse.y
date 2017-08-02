@@ -492,7 +492,8 @@ info    :: { CmmParse (CLabel, Maybe CmmInfoTable, [LocalReg]) }
                 {% liftP . withThisPackage $ \pkg ->
                    do dflags <- getDynFlags
                       let prof = profilingInfo dflags $13 $15
-                          ty  = Constr (fromIntegral $9)  -- Tag
+                          ty  = Constr ImmCon
+                                       (fromIntegral $9)  -- Tag
                                        (stringToWord8s $13)
                           rep = mkRTSRep (fromIntegral $11) $
                                   mkHeapRep dflags False (fromIntegral $5)

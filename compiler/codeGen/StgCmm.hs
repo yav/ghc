@@ -194,7 +194,7 @@ cgDataCon data_con
         ; let
             (tot_wds, --  #ptr_wds + #nonptr_wds
              ptr_wds) --  #ptr_wds
-              = mkVirtConstrSizes dflags arg_reps
+              = mkVirtConstrSizes dflags (isMutableDataCon data_con) arg_reps
 
             nonptr_wds   = tot_wds - ptr_wds
 

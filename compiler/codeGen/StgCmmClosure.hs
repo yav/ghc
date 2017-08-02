@@ -404,8 +404,8 @@ isLFReEntrant _                = False
 
 lfClosureType :: LambdaFormInfo -> ClosureTypeInfo
 lfClosureType (LFReEntrant _ _ arity _ argd) = Fun arity argd
-lfClosureType (LFCon con)                    = Constr (dataConTagZ con)
-                                                      (dataConIdentity con)
+lfClosureType (LFCon con)  = Constr flav (dataConTagZ con) (dataConIdentity con)
+  where flav = if isMutableDataCon con then MutCon else ImmCon
 lfClosureType (LFThunk _ _ _ is_sel _)       = thunkClosureType is_sel
 lfClosureType _                              = panic "lfClosureType"
 
@@ -1043,9 +1043,10 @@ mkDataConInfoTable dflags data_con is_static ptr_wds nonptr_wds
    name = dataConName data_con
    info_lbl = mkConInfoTableLabel name NoCafRefs
    sm_rep = mkHeapRep dflags is_static ptr_wds nonptr_wds cl_type
-   cl_type = Constr (dataConTagZ data_con) (dataConIdentity data_con)
+   cl_type = Constr flav (dataConTagZ data_con) (dataConIdentity data_con)
                   -- We keep the *zero-indexed* tag in the srt_len field
                   -- of the info table of a data constructor.
+   flav = if isMutableDataCon data_con then MutCon else ImmCon
 
    prof | not (gopt Opt_SccProfilingOn dflags) = NoProfilingInfo
         | otherwise                            = ProfilingInfo ty_descr val_descr

@@ -18,7 +18,7 @@ module SMRep (
         -- * Closure repesentation
         SMRep(..), -- CmmInfo sees the rep; no one else does
         IsStatic,
-        ClosureTypeInfo(..), ArgDescr(..), Liveness,
+        ClosureTypeInfo(..), ArgDescr(..), Liveness, ConFlav(..),
         ConstrDescription,
 
         -- ** Construction
@@ -34,7 +34,7 @@ module SMRep (
         fixedHdrSizeW, arrWordsHdrSize, arrWordsHdrSizeW, arrPtrsHdrSize,
         arrPtrsHdrSizeW, profHdrSize, thunkHdrSize, nonHdrSize, nonHdrSizeW,
         smallArrPtrsHdrSize, smallArrPtrsHdrSizeW, hdrSize, hdrSizeW,
-        fixedHdrSize,
+        fixedHdrSize, mutableConstrHdrSizeW,
 
         -- ** RTS closure types
         rtsClosureType, rET_SMALL, rET_BIG,
@@ -185,9 +185,13 @@ type IsStatic = Bool
 -- includes/rts/storage/ClosureTypes.h. Described by the function
 -- rtsClosureType below.
 
+-- | Flavor of construct
+data ConFlav = MutCon -- ^ Mutable constructor
+             | ImmCon -- ^ Immutable (ordinary) constructor
+
 data ClosureTypeInfo
-  = Constr        ConTagZ ConstrDescription
-  | Fun           FunArity ArgDescr
+  = Constr ConFlav ConTagZ ConstrDescription
+  | Fun   FunArity ArgDescr
   | Thunk
   | ThunkSelector SelectorOffset
   | BlackHole
@@ -349,6 +353,11 @@ thunkHdrSize :: DynFlags -> WordOff
 thunkHdrSize dflags = fixedHdrSizeW dflags + smp_hdr
         where smp_hdr = sIZEOF_StgSMPThunkHeader dflags `quot` wORD_SIZE dflags
 
+-- | Mutable constructors have an extra word, used as a "card table",
+-- to remember which fields are dirty.
+mutableConstrHdrSizeW :: DynFlags -> WordOff
+mutableConstrHdrSizeW dflags = fixedHdrSizeW dflags + 1
+
 hdrSize :: DynFlags -> SMRep -> ByteOff
 hdrSize dflags rep = wordsToBytes dflags (hdrSizeW dflags rep)
 
@@ -384,6 +393,7 @@ heapClosureSizeW _ _ = panic "SMRep.heapClosureSize"
 
 closureTypeHdrSize :: DynFlags -> ClosureTypeInfo -> WordOff
 closureTypeHdrSize dflags ty = case ty of
+                  Constr MutCon _ _ -> mutableConstrHdrSizeW dflags
                   Thunk{}         -> thunkHdrSize dflags
                   ThunkSelector{} -> thunkHdrSize dflags
                   BlackHole{}     -> thunkHdrSize dflags
@@ -430,14 +440,15 @@ rtsClosureType rep
       RTSRep ty _ -> ty
 
       -- See Note [static constructors]
-      HeapRep _     1 0 Constr{} -> CONSTR_1_0
-      HeapRep _     0 1 Constr{} -> CONSTR_0_1
-      HeapRep _     2 0 Constr{} -> CONSTR_2_0
-      HeapRep _     1 1 Constr{} -> CONSTR_1_1
-      HeapRep _     0 2 Constr{} -> CONSTR_0_2
-      HeapRep _     0 _ Constr{} -> CONSTR_NOCAF
+      HeapRep _     _ _ (Constr MutCon _ _) -> MUT_CONSTR
+      HeapRep _     1 0 (Constr ImmCon _ _) -> CONSTR_1_0
+      HeapRep _     0 1 (Constr ImmCon _ _) -> CONSTR_0_1
+      HeapRep _     2 0 (Constr ImmCon _ _) -> CONSTR_2_0
+      HeapRep _     1 1 (Constr ImmCon _ _) -> CONSTR_1_1
+      HeapRep _     0 2 (Constr ImmCon _ _) -> CONSTR_0_2
+      HeapRep _     0 _ (Constr ImmCon _ _) -> CONSTR_NOCAF
            -- See Note [Static NoCaf constructors]
-      HeapRep _     _ _ Constr{} -> CONSTR
+      HeapRep _     _ _ (Constr ImmCon _ _) -> CONSTR
 
       HeapRep False 1 0 Fun{} -> FUN_1_0
       HeapRep False 0 1 Fun{} -> FUN_0_1
@@ -461,6 +472,7 @@ rtsClosureType rep
       HeapRep False _ _ BlackHole{} -> BLACKHOLE
 
       HeapRep False _ _ IndStatic{} -> IND_STATIC
+
 
       _ -> panic "rtsClosureType"
 
@@ -548,10 +560,13 @@ instance Outputable ArgDescr where
   ppr (ArgGen ls) = text "ArgGen" <+> ppr ls
 
 pprTypeInfo :: ClosureTypeInfo -> SDoc
-pprTypeInfo (Constr tag descr)
-  = text "Con" <+>
+pprTypeInfo (Constr flav tag descr)
+  = pref <> text "Con" <+>
     braces (sep [ text "tag:" <+> ppr tag
                 , text "descr:" <> text (show descr) ])
+  where pref = case flav of
+                  MutCon -> text "Mut"
+                  ImmCon -> text ""
 
 pprTypeInfo (Fun arity args)
   = text "Fun" <+>

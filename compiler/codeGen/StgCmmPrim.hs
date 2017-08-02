@@ -2288,13 +2288,11 @@ readMutField :: DynFlags {-^ Info about environment -}    ->
 readMutField dflags res base offset ty =
   emitAssign (CmmLocal res)
     (cmmLoadIndexOffExpr dflags
-      (fixedHdrSize dflags + word) -- skip header and card_table
+      (mutableConstrHdrSizeW dflags)
       ty
       base
       (gcWord dflags) -- offset is in words
       offset)
-  where
-  word = widthInBytes (typeWidth (gcWord dflags))
 
 -- | Set the value of a mutable field of the given type.
 writeMutField :: DynFlags {-^ Info about environment -}      ->
@@ -2305,7 +2303,7 @@ writeMutField :: DynFlags {-^ Info about environment -}      ->
 writeMutField dflags base offset val =
   emitStore
     (cmmIndexOffExpr dflags
-      (fixedHdrSize dflags + widthInBytes word) -- skip header and card_table
+      (mutableConstrHdrSizeW dflags)
       word
       base
       offset)

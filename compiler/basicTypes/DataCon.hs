@@ -54,6 +54,7 @@ module DataCon (
         isVanillaDataCon, classDataCon, dataConCannotMatch,
         isBanged, isMarkedStrict, eqHsBang, isSrcStrict, isSrcUnpacked,
         specialPromotedDc, isLegacyPromotableDataCon, isLegacyPromotableTyCon,
+        isMutableDataCon,
 
         -- ** Promotion related functions
         promoteDataCon
@@ -258,6 +259,10 @@ Note that (Foo a) might not be an instance of Ord.
 *                                                                      *
 ************************************************************************
 -}
+
+-- | XXX
+isMutableDataCon :: DataCon -> Bool
+isMutableDataCon _ = False
 
 -- | A data constructor
 --

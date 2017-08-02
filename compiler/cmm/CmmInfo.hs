@@ -213,7 +213,7 @@ mkInfoTableContents dflags
                         , Maybe CmmLit       -- Override the layout field with this
                         , [CmmLit]           -- "Extra bits" for info table
                         , [RawCmmDecl])      -- Auxiliary data decls
-    mk_pieces (Constr con_tag con_descr) _no_srt    -- A data constructor
+    mk_pieces (Constr _ con_tag con_descr) _no_srt    -- A data constructor
       = do { (descr_lit, decl) <- newStringLit con_descr
            ; return ( Just (toStgHalfWord dflags (fromIntegral con_tag))
                     , Nothing, [descr_lit], [decl]) }
