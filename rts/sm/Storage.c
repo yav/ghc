@@ -1069,11 +1069,12 @@ dirty_MUT_VAR(StgRegTable *reg, StgClosure *p)
 void
 dirty_MUT_CONSTR(StgRegTable *reg, StgMutConstr *p, StgWord ix)
 {
-    if (p->card_table == 0) {
+    int was_clean = p->card_table == 0;
+    p->card_table |= (1 << ix);   // mark field as dirty
+    if (was_clean) {
       // Clean becoming dirty
       recordClosureMutated(regTableToCapability(reg), (StgClosure*)p);
     }
-    p->card_table |= (1 << ix);   // mark field as dirty
 }
 
 void
