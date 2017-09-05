@@ -232,6 +232,71 @@ static StgPtr scavenge_mut_arr_ptrs_marked (StgMutArrPtrs *a)
     return (StgPtr)a + mut_arr_ptrs_sizeW(a);
 }
 
+
+
+static StgPtr scavenge_mut_constr (StgMutConstr *m)
+{
+    const StgInfoTable *info = m->header.header.info;
+    StgWord ptrs             = info->layout.payload.ptrs;
+    StgPtr p                 = (P_)m->payload;
+    StgWord newCT            = 0;
+    StgWord i;
+
+    bool save_eager_prom = gct->eager_promotion;
+    gct->eager_promotion = false;
+    // XXX: it might be better to do eager promotion for immutable
+    // fields, but at the moment we have no good way to distinguish mutable
+    // and immutable fields.
+
+    for (i = 0; i < ptrs ; ++i) {
+      evacuate((StgClosure(**))p[i]);
+      if (gct->failed_to_evac) {
+        newCT |= (1 << i);
+        gct->failed_to_evac = false;
+      }
+    }
+    m->header.card_table = newCT;
+
+    gct->eager_promotion = save_eager_prom;
+    gct->failed_to_evac = newCT != 0;
+
+    return (StgPtr)m + ptrs + info->layout.payload.nptrs;
+}
+
+
+
+// scavenge only the marked fields of a MUT_CONSTR.
+static void scavenge_mut_constr_marked (StgMutConstr *m)
+{
+    StgPtr p      = (P_)m->payload;
+    StgWord todo  = m->header.card_table;
+    StgWord newCT = 0;
+    StgWord i;
+
+    bool save_eager_prom = gct->eager_promotion;
+    gct->eager_promotion = false;
+    // XXX: it might be better to do eager promotion for immutable
+    // fields, but at the moment we have no good way to distinguish mutable
+    // and immutable fields.
+
+    for (i = 0; todo; ++i) {
+      if (todo & 1) {
+        evacuate((StgClosure(**))p[i]);
+        if (gct->failed_to_evac) {
+          newCT |= (1 << i);
+          gct->failed_to_evac = false;
+        }
+      }
+      todo = todo >> 1;
+    }
+    m->header.card_table  = newCT;
+
+    gct->eager_promotion  = save_eager_prom;
+    gct->failed_to_evac   = newCT != 0;
+}
+
+
+
 STATIC_INLINE StgPtr
 scavenge_small_bitmap (StgPtr p, StgWord size, StgWord bitmap)
 {
@@ -635,26 +700,6 @@ scavenge_block (bdescr *bd)
         break;
     }
 
-    case MUT_CONSTR: {
-        StgMutConstr *m = (StgMutConstr *) p;
-        StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
-
-        gct->eager_promotion = false;
-
-        for (p = (P_)m->payload; p < end; p++) {
-            evacuate((StgClosure **)p);
-        }
-
-        gct->eager_promotion = saved_eager_promotion;
-
-        if (!gct->failed_to_evac) {
-          m->header.card_table = 0;    // Make it clean
-        }
-
-        p += info->layout.payload.nptrs;
-        break;
-    }
-
     case BCO: {
         StgBCO *bco = (StgBCO *)p;
         evacuate((StgClosure **)&bco->instrs);
@@ -735,6 +780,10 @@ scavenge_block (bdescr *bd)
         p += arr_words_sizeW((StgArrBytes *)p);
         break;
 
+    case MUT_CONSTR:
+        p = scavenge_mut_constr((StgMutConstr*)p);
+        break;
+
     case MUT_ARR_PTRS_CLEAN:
     case MUT_ARR_PTRS_DIRTY:
     {
@@ -756,6 +805,8 @@ scavenge_block (bdescr *bd)
         gct->failed_to_evac = true; // always put it on the mutable list.
         break;
     }
+
+
 
     case MUT_ARR_PTRS_FROZEN:
     case MUT_ARR_PTRS_FROZEN0:
@@ -799,6 +850,8 @@ scavenge_block (bdescr *bd)
         gct->failed_to_evac = true; // always put it on the mutable list.
         break;
     }
+
+
 
     case SMALL_MUT_ARR_PTRS_FROZEN:
     case SMALL_MUT_ARR_PTRS_FROZEN0:
@@ -1130,6 +1183,10 @@ scavenge_mark_stack(void)
             scavenge_AP((StgAP *)p);
             break;
 
+        case MUT_CONSTR:
+          p = scavenge_mut_constr((StgMutConstr*) p);
+          break;
+
         case MUT_ARR_PTRS_CLEAN:
         case MUT_ARR_PTRS_DIRTY:
             // follow everything
@@ -1151,25 +1208,6 @@ scavenge_mark_stack(void)
             gct->eager_promotion = saved_eager_promotion;
             gct->failed_to_evac = true; // mutable anyhow.
             break;
-        }
-
-        case MUT_CONSTR: {
-          StgMutConstr *m = (StgMutConstr*) p;
-          StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
-
-          gct->eager_promotion = false;
-
-          for (p = (P_)m->payload; p < end; p++) {
-              evacuate((StgClosure **)p);
-          }
-
-          gct->eager_promotion = saved_eager_promotion;
-
-          if (!gct->failed_to_evac) {
-              m->header.card_table = 0; // Make it clean
-          }
-
-          break;
         }
 
         case MUT_ARR_PTRS_FROZEN:
@@ -1474,6 +1512,10 @@ scavenge_one(StgPtr p)
         // nothing to follow
         break;
 
+    case MUT_CONSTR:
+      p = scavenge_mut_constr((StgMutConstr*)p);
+      break;
+
     case MUT_ARR_PTRS_CLEAN:
     case MUT_ARR_PTRS_DIRTY:
     {
@@ -1560,27 +1602,6 @@ scavenge_one(StgPtr p)
             ((StgClosure *)q)->header.info = &stg_SMALL_MUT_ARR_PTRS_FROZEN_info;
         }
         break;
-    }
-
-    case MUT_CONSTR: {
-      StgMutConstr *m = (StgMutConstr *) p;
-      StgWord todo = m->header.card_table;
-      StgPtr end = (P_)m->payload + info->layout.payload.ptrs;
-
-      gct->eager_promotion = false;
-
-      for (p = (P_)m->payload; todo != 0 && p < end; ++p) {
-          if (todo & 1) evacuate((StgClosure **)p);
-          todo = todo >> 1;
-      }
-
-      gct->eager_promotion = saved_eager_promotion;
-
-      if (!gct->failed_to_evac) {
-        m->header.card_table = 0;  // make it clean
-      }
-
-      break;
     }
 
     case TSO:
@@ -1749,6 +1770,14 @@ scavenge_mutable_list(bdescr *bd, generation *gen)
             // are always on the mutable list.
             //
             switch (get_itbl((StgClosure *)p)->type) {
+
+            case MUT_CONSTR:
+              scavenge_mut_constr_marked((StgMutConstr*)p);
+              if (gct->failed_to_evac) {
+                recordMutableGen_GC((StgClosure *)p,gen_no);
+              }
+              continue;
+
             case MUT_ARR_PTRS_CLEAN:
                 recordMutableGen_GC((StgClosure *)p,gen_no);
                 continue;

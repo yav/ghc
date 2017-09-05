@@ -483,12 +483,15 @@ typedef struct StgCompactNFData_ {
 typedef struct {
   StgHeader header;
   StgWord   card_table;
-  /* Bitmap of dirty pointers.
-     Bit-0 (least significant) is the first mutable pointer.
+  /* Bitmap of pointers that need scavenging.
+     This includes pointers that changed (aka "dirty") as well as
+     pointers that failed to evacuate.
+
+     Bit-0 (least significant) is the first pointer.
 
      Note that we just use a word for this, so
      this object type does not support more than
-     size_of(StgWord) mutable pointers. */
+     size_of(StgWord) pointers. */
 } StgMutConstrHeader;
 
 
@@ -497,8 +500,7 @@ typedef struct StgMutConstr_ {
 
   StgClosure *payload[];
   /* The payload:
-       Mutable pointers
-       Non-mutable pointers
+       Pointres---both mutable and immutable, not sorted.
        Non-pointers */
 } StgMutConstr;
 
