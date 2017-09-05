@@ -885,7 +885,8 @@ mkMutVarPrimTy s elt        = TyConApp mutVarPrimTyCon [s, elt]
 
 
 
--- Ref# :: forall (k :: RuntimeRep). * -> TYPE k -> (# UnliftedRep, WordRep #)
+-- Ref# :: forall (k :: RuntimeRep). * -> TYPE k ->
+--                                      TYPE (TupleRep [ UnliftedRep, WordRep ])
 refPrimTyCon :: TyCon
 refPrimTyCon = mkPrimTyCon refPrimTyConName binders res_kind [Nominal,Representational]
   where
