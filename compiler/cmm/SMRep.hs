@@ -185,7 +185,7 @@ type IsStatic = Bool
 -- includes/rts/storage/ClosureTypes.h. Described by the function
 -- rtsClosureType below.
 
--- | Flavor of construct
+-- | Flavor of constructor
 data ConFlav = MutCon -- ^ Mutable constructor
              | ImmCon -- ^ Immutable (ordinary) constructor
 
