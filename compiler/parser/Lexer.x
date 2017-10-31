@@ -767,6 +767,9 @@ data Token
   | ITlineComment     String     -- comment starting by "--"
   | ITblockComment    String     -- comment in {- -}
 
+  -- Mutable constructors
+  | ITmutable                     -- mutable
+
   deriving Show
 
 instance Outputable Token where
@@ -844,7 +847,9 @@ reservedWordsFM = listToUFM $
 
          ( "rec",            ITrec,           xbit ArrowsBit .|.
                                               xbit RecursiveDoBit),
-         ( "proc",           ITproc,          xbit ArrowsBit)
+         ( "proc",           ITproc,          xbit ArrowsBit),
+
+         ( "mutable",        ITmutable,       xbit MutableFieldsBit )
      ]
 
 {-----------------------------------
@@ -2180,6 +2185,7 @@ data ExtBits
   | NegativeLiteralsBit
   | TypeApplicationsBit
   | StaticPointersBit
+  | MutableFieldsBit
   deriving Enum
 
 
@@ -2246,6 +2252,8 @@ typeApplicationEnabled :: ExtsBitmap -> Bool
 typeApplicationEnabled = xtest TypeApplicationsBit
 staticPointersEnabled :: ExtsBitmap -> Bool
 staticPointersEnabled = xtest StaticPointersBit
+mutableFieldsEnabled :: ExtsBitmap -> Bool
+mutableFieldsEnabled = xtest MutableFieldsBit
 
 -- PState for parsing options pragmas
 --
@@ -2300,6 +2308,7 @@ mkParserFlags flags =
                .|. PatternSynonymsBit          `setBitIf` xopt LangExt.PatternSynonyms          flags
                .|. TypeApplicationsBit         `setBitIf` xopt LangExt.TypeApplications         flags
                .|. StaticPointersBit           `setBitIf` xopt LangExt.StaticPointers           flags
+               .|. MutableFieldsBit            `setBitIf` xopt LangExt.MutableFields            flags
 
       setBitIf :: ExtBits -> Bool -> ExtsBitmap
       b `setBitIf` cond | cond      = xbit b

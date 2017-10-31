@@ -398,6 +398,7 @@ are the most common patterns, rewritten as regular expressions for clarity:
  'interruptible' { L _ ITinterruptible }
  'unsafe'       { L _ ITunsafe }
  'mdo'          { L _ ITmdo }
+ 'mutable'      { L _ ITmutable }
  'family'       { L _ ITfamily }
  'role'         { L _ ITrole }
  'stdcall'      { L _ ITstdcallconv }
@@ -1827,7 +1828,6 @@ type :: { LHsType GhcPs }
                                        >> ams (sLL $1 $> $ HsFunTy $1 $3)
                                               [mu AnnRarrow $2] }
 
-
 typedoc :: { LHsType GhcPs }
         : btype                          { $1 }
         | btype docprev                  { sLL $1 $> $ HsDocTy $1 $2 }
@@ -1870,6 +1870,7 @@ atype :: { LHsType GhcPs }
         | tyvar                          { sL1 $1 (HsTyVar NotPromoted $1) }      -- (See Note [Unit tuples])
         | strict_mark atype              {% ams (sLL $1 $> (HsBangTy (snd $ unLoc $1) $2))
                                                 (fst $ unLoc $1) }  -- Constructor sigs only
+        | 'mutable' atype                { sLL $1 $> (HsMutableTy $2) }
         | '{' fielddecls '}'             {% amms (checkRecordSyntax
                                                     (sLL $1 $> $ HsRecTy $2))
                                                         -- Constructor sigs only
@@ -3257,6 +3258,7 @@ varid :: { Located RdrName }
         | 'forall'         { sL1 $1 $! mkUnqual varName (fsLit "forall") }
         | 'family'         { sL1 $1 $! mkUnqual varName (fsLit "family") }
         | 'role'           { sL1 $1 $! mkUnqual varName (fsLit "role") }
+        | 'mutable'        { sL1 $1 $! mkUnqual varName (fsLit "mutable") }
 
 qvarsym :: { Located RdrName }
         : varsym                { $1 }

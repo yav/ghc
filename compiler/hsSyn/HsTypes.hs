@@ -551,6 +551,9 @@ data HsType pass
 
       -- For details on above see note [Api annotations] in ApiAnnotation
 
+  | HsMutableTy (LHsType pass)
+      -- ^ A mutable field annotation.
+
   | HsRecTy     [LConDeclField pass]    -- Only in data type declarations
       -- ^ - 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnOpen' @'{'@,
       --         'ApiAnnotation.AnnClose' @'}'@
@@ -1285,6 +1288,7 @@ ppr_mono_ty (HsQualTy { hst_ctxt = L _ ctxt, hst_body = ty })
   = sep [pprHsContextAlways ctxt, ppr_mono_lty ty]
 
 ppr_mono_ty (HsBangTy b ty)     = ppr b <> ppr_mono_lty ty
+ppr_mono_ty (HsMutableTy ty)    = text "mutable" <+> ppr_mono_lty ty
 ppr_mono_ty (HsRecTy flds)      = pprConDeclFields flds
 ppr_mono_ty (HsTyVar NotPromoted (L _ name))= pprPrefixOcc name
 ppr_mono_ty (HsTyVar Promoted (L _ name))

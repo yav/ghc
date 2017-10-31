@@ -526,6 +526,10 @@ tc_hs_type _ ty@(HsBangTy {}) _
     -- other kinds of bangs are not (eg ((!Maybe) Int)). These kinds of
     -- bangs are invalid, so fail. (#7210)
     = failWithTc (text "Unexpected strictness annotation:" <+> ppr ty)
+
+tc_hs_type _ ty@(HsMutableTy {}) _
+    = failWithTc (text "Unexpected `mutable` annotation:" <+> ppr ty)
+
 tc_hs_type _ ty@(HsRecTy _)      _
       -- Record types (which only show up temporarily in constructor
       -- signatures) should have been removed by now
